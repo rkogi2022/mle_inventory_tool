@@ -251,7 +251,8 @@ class inventoryassignment extends Controller
     }
 
     //edit assignment
-    public function edit($id) {
+    public function edit($id) 
+    {
         if ($this->model === null) {
             echo "Model not loaded properly!";
             exit();
@@ -275,15 +276,27 @@ class inventoryassignment extends Controller
         $users = $this->model->getAllUsers();
         $offices = $this->model->getOffices(); 
 
+        // ✅ Merge already assigned items to the unassigned list for dropdown
+        foreach ($assignment['items'] as $assignedItem) {
+            $found = false;
+            foreach ($unassignedItems as $item) {
+                if ($item['id'] == $assignedItem['id']) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                $unassignedItems[] = $assignedItem;
+            }
+        }
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // Validate input data
             $updatedData = [
-                'user_id' => $_POST['user_id'], 
-                'date_assigned' => $_POST['date_assigned'], 
+                'user_id' => $_POST['user_id'],
+                'date_assigned' => $_POST['date_assigned'],
                 'managed_by' => $_POST['managed_by']
             ];
 
-            // Ensure inventory_id is an array
             if (!empty($_POST['inventory_id']) && is_array($_POST['inventory_id'])) {
                 $inventory_ids = $_POST['inventory_id'];
             } else {
@@ -291,40 +304,32 @@ class inventoryassignment extends Controller
                 exit();
             }
 
-            // Call update method with all required parameters
             $result = $this->model->updateAssignment($id, $updatedData, $inventory_ids);
 
             if ($result) {
-                // === NEW: Send emails after successful update ===
-
-                // Fetch updated user info
+                // === NEW: Send emails ===
                 $recipientData = $this->model->getUserById($updatedData['user_id']);
                 $recipientEmail = $recipientData['email'];
                 $emailPrefix = explode('@', $recipientEmail)[0];
                 $recipientName = implode(' ', array_map('ucfirst', explode('.', $emailPrefix)));
 
-                // Get assigner info from session
                 session_start();
                 $assignerEmail = $_SESSION['user_email'] ?? '';
                 $assignerProfile = $this->model->getUserProfileByEmail($assignerEmail);
                 if (!empty($assignerProfile['email'])) {
-                    $assignerEmailPrefix = explode('@', $assignerProfile['email'])[0];
-                    $assignerProfile['name'] = implode(' ', array_map('ucfirst', explode('.', $assignerEmailPrefix)));
+                    $emailPrefix = explode('@', $assignerProfile['email'])[0];
+                    $assignerProfile['name'] = implode(' ', array_map('ucfirst', explode('.', $emailPrefix)));
                 } else {
                     $assignerProfile['name'] = 'N/A';
                 }
 
-                // Get updated item summaries
                 $itemList = $this->model->getItemSummariesByIds($inventory_ids);
 
-                // Send acknowledgment email to user
                 $this->sendAcknowledgmentEmailToUser($recipientEmail, $recipientName, $itemList, $assignerProfile);
 
-                // Notify manager
                 $managerName = implode(' ', array_map('ucfirst', explode('.', explode('@', $updatedData['managed_by'])[0])));
                 $this->sendAssignmentNotificationToManager($updatedData['managed_by'], $managerName, $recipientName, $itemList);
-
-                // === END of new email notification logic ===
+                // === END email ===
 
                 header("Location: " . URL . "inventoryassignment?success=" . urlencode("Assignment Updated Successfully"));
                 exit();
@@ -333,13 +338,11 @@ class inventoryassignment extends Controller
                 exit();
             }
         } else {
-            // Load edit view with necessary data
             require APP . 'view/_templates/sessions.php';
             require APP . 'view/_templates/header.php';
             require APP . 'view/inventory_assignments/edit_assignment.php';
         }
     }
-
     
     //delete assignment
     public function delete() {

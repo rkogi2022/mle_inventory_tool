@@ -105,8 +105,6 @@
                 </div>
             </div>
 
-
-
             <div class="card-body table-responsive">
                 <!-- Manual Search Input -->
                 <div class="mb-3 d-flex justify-content-end">
