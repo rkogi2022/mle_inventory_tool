@@ -195,7 +195,8 @@ class Login extends Controller
     //     }
 
 
-    public function loginWithGoogle() {
+public function loginWithGoogle() 
+{
     session_start();
 
     require_once __DIR__ . '/../../vendor/autoload.php';
@@ -203,7 +204,7 @@ class Login extends Controller
     $client = new Google_Client();
     $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
     $client->setClientSecret('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');
-    $client->setRedirectUri('https://mleinventory.evidenceaction.org/oauth2/code/google');
+    $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
     $client->addScope('email');
     $client->addScope('profile');
     $client->setPrompt('select_account');
@@ -213,7 +214,8 @@ class Login extends Controller
     exit();
 }
 
-public function googleCallback() {
+public function googleCallback() 
+{
     session_start();
 
     require_once __DIR__ . '/../../vendor/autoload.php';
@@ -228,18 +230,18 @@ public function googleCallback() {
         $client = new Google_Client();
         $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
         $client->setClientSecret('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');
-        $client->setRedirectUri('https://mleinventory.evidenceaction.org/oauth2/code/google');
-        $client->addScope('email');
-        $client->addScope('profile');
+        $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
 
         if (!isset($_GET['code'])) {
             throw new Exception("Authorization code not found in callback.");
         }
 
+        // Exchange code for access token
         $accessToken = $client->fetchAccessTokenWithAuthCode($_GET['code']);
 
         if (!is_array($accessToken) || isset($accessToken['error'])) {
-            $errorMsg = isset($accessToken['error_description']) ? $accessToken['error_description'] : json_encode($accessToken);
+            error_log("Access token fetch error: " . json_encode($accessToken));
+            $errorMsg = $accessToken['error_description'] ?? $accessToken['error'] ?? 'Unknown error';
             throw new Exception("Access token error: " . $errorMsg);
         }
 
@@ -268,12 +270,14 @@ public function googleCallback() {
             header('Location: ' . URL . 'login/index?error=user_not_found');
             exit();
         }
+
     } catch (Exception $e) {
         error_log("Google Login Error: " . $e->getMessage());
         header('Location: ' . URL . 'login/index?error=' . urlencode($e->getMessage()));
         exit();
     }
 }
+
 
     // }
    

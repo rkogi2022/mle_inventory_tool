@@ -67,6 +67,6 @@ define('DB_CHARSET', 'utf8');
 // define('GOOGLE_CLIENT_SECRET', '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');
 // define('GOOGLE_REDIRECT_URI', 'http://localhost/mle_inventory_tool/login/googleCallback');
 
-// define('GOOGLE_CLIENT_ID', '1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
-// define('GOOGLE_CLIENT_SECRET', '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');
-// define('GOOGLE_REDIRECT_URI', 'https://mleinventory.evidenceaction.org/oauth2/code/google');
+define('GOOGLE_CLIENT_ID', '1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', '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');
+define('GOOGLE_REDIRECT_URI', 'https://mleinventory.evidenceaction.org/login/googleCallback');

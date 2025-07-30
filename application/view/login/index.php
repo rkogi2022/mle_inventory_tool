@@ -81,10 +81,10 @@
           <input type="password" name="inputPassword" id="inputPassword" class="form-control" required>
         </div>
         <button type="submit">Login</button>
-        <!-- <a href="<?php echo URL; ?>login/loginWithGoogle" class="google-btn">
+        <a href="<?php echo URL; ?>login/loginWithGoogle" class="google-btn">
             <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google logo" >
             Sign in with Google
-        </a> -->
+        </a>
 
       </form>
     </div>
