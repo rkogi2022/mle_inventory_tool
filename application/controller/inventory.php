@@ -378,6 +378,8 @@ class Inventory extends Controller
                 <p>This is to inform you that item(s) have been issued to you through the MLE Inventory System. 
                 You are required to log in and acknowledge receipt of the item(s) within the next <strong>two (2) working days</strong>.</p>
 
+                <p>You can log in here: <a href='https://mleinventory.evidenceaction.org'>https://mleinventory.evidenceaction.org</a></p>
+
                 {$itemListHtml}
 
                 <p><strong>Please note:</strong> Failure to acknowledge may affect future inventory tracking and accountability.</p>

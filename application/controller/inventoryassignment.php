@@ -73,7 +73,6 @@ class inventoryassignment extends Controller
 
                 // Get item summary list with serial, tag, description
                 $itemList = $this->model->getItemSummariesByIds($item_ids);
-                error_log("Item List from getItemSummariesByIds: " . print_r($itemList, true));
 
                 // Send acknowledgment email to user
                 $this->sendAcknowledgmentEmailToUser($recipientEmail, $recipientName, $itemList, $assignerProfile);
@@ -122,37 +121,12 @@ class inventoryassignment extends Controller
             $mail->isHTML(true);
             $mail->Subject = 'Acknowledgment Required: Issued Item(s) – Action Needed Within 2 Working Days';
 
-            // Build item list HTML
+            // Format item list using pre-formatted strings
             $itemListHtml = "<ul>";
-            foreach ($itemList as $item) {
-                // $item is a string like: "Description: Lenovo LI1931ewA Monitor, Serial: 4ML125E15N1378, Tag: 200509"
-                // Let's split by comma and colon and wrap labels in <strong>
-                
-                // Explode by commas
-                $parts = explode(',', $item);
-                $formattedParts = [];
-
-                foreach ($parts as $part) {
-                    // trim whitespace
-                    $part = trim($part);
-
-                    // Split label and value by first colon
-                    $labelValue = explode(':', $part, 2);
-
-                    if (count($labelValue) == 2) {
-                        $label = htmlspecialchars(trim($labelValue[0]));
-                        $value = htmlspecialchars(trim($labelValue[1]));
-                        $formattedParts[] = "<strong>{$label}:</strong> {$value}";
-                    } else {
-                        // fallback if no colon
-                        $formattedParts[] = htmlspecialchars($part);
-                    }
-                }
-
-                $itemListHtml .= "<li>" . implode(', ', $formattedParts) . "</li>";
+            foreach ($itemList as $itemString) {
+                $itemListHtml .= "<li>" . htmlspecialchars($itemString) . "</li>";
             }
             $itemListHtml .= "</ul>";
-
 
             $assignerName = htmlspecialchars($assigner['name'] ?? 'N/A');
             $assignerPosition = htmlspecialchars($assigner['position'] ?? 'N/A');
@@ -165,6 +139,8 @@ class inventoryassignment extends Controller
                 You are required to log in and acknowledge receipt of the item(s) within the next <strong>two (2) working days</strong>.</p>
 
                 {$itemListHtml}
+
+                <p>You can log in here: <a href='https://mleinventory.evidenceaction.org'>https://mleinventory.evidenceaction.org</a></p>
 
                 <p><strong>Please note:</strong> Failure to acknowledge may affect future inventory tracking and accountability.</p>
 
@@ -179,9 +155,10 @@ class inventoryassignment extends Controller
                 Evidence Action</p>
             ";
 
-            $mail->AltBody = "You have been assigned items. Please log in to the MLE Inventory Tool and acknowledge receipt within 2 working days.";
+            $mail->AltBody = "You have been assigned items. Please log in to the MLE Inventory Tool and acknowledge receipt within 2 working days: https://mleinventory.evidenceaction.org";
 
             $mail->CharSet = 'UTF-8';
+
             $mail->send();
             error_log("Acknowledgment email sent to: {$recipientEmail}");
         } catch (Exception $e) {
@@ -579,6 +556,7 @@ class inventoryassignment extends Controller
                             $mail->Subject = 'Action Required: Confirm Your Assigned Item(s)';
                             $mail->Body    = "Hi {$prettyName},<br><br>"
                                 . "You have been assigned the following item(s). Please log into the MLE Inventory Tool and confirm receipt within 5 working days.<br><br>"
+                                . "Access the system here: <a href='https://mleinventory.evidenceaction.org'>https://mleinventory.evidenceaction.org</a><br><br>"
                                 . "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse: collapse;'>"
                                 . "<tr><th>Item</th><th>Tag Number</th><th>Serial Number</th></tr>"
                                 . $tableRows
