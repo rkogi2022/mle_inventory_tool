@@ -1240,6 +1240,22 @@ class Model
         $query->execute([':user_email' => $user_email]);
         return $query->fetchAll(PDO::FETCH_ASSOC);
     }
+
+public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
+{
+    $sql = "SELECT DISTINCT email 
+            FROM inventory_assignment 
+            WHERE acknowledgment_status = 'pending'
+            LIMIT :limit OFFSET :offset";
+    $query = $this->db->prepare($sql);
+    $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $query->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $query->execute();
+
+    return $query->fetchAll(PDO::FETCH_ASSOC);
+}
+
+
             //item returning process...
         //model to show returned item
     public function getReturnedItems($returned_by)
