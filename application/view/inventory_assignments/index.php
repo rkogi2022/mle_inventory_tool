@@ -23,9 +23,9 @@
         <form action="<?= URL; ?>inventoryassignment/add" method="GET" class="mb-0">
             <button type="submit" class="add-btn">Assign New Item</button>
         </form>
-        <form action="<?= URL; ?>inventoryassignment/triggerAcknowledgmentReminders" method="GET" class="mb-0" onsubmit="return confirm('Send reminder emails to all users with pending acknowledgment?');">
+        <!-- <form action="<?= URL; ?>inventoryassignment/triggerAcknowledgmentReminders" method="GET" class="mb-0" onsubmit="return confirm('Send reminder emails to all users with pending acknowledgment?');">
     <button type="submit" class="add-btn">Send Acknowledgment Reminders</button>
-</form>
+</form> -->
     </div>
 
     <div class="card-body table-responsive">
