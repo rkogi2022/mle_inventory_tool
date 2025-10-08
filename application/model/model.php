@@ -16,6 +16,27 @@ class Model
         }
         
     }
+
+    //     protected $db;
+
+    // public function __construct()
+    // {
+    //     require_once __DIR__ . '/../config/config.php';
+
+    //     // echo "Loaded config file path: " . __FILE__ . "<br>";
+    //     // echo "DB_NAME = " . DB_NAME . "<br>";
+
+    //     try {
+    //         $this->db = new PDO(
+    //             DB_TYPE . ':host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET,
+    //             DB_USER,
+    //             DB_PASS
+    //         );
+    //         // echo "✅ Connected to database: " . DB_NAME . "<br>";
+    //     } catch (PDOException $e) {
+    //         die("❌ Connection failed: " . $e->getMessage());
+    //     }
+    // }
   /** ---------------- Login and User management Functions-------------------- **/
 
     // login function
@@ -2607,6 +2628,100 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         }
 
         return $grouped;
+    }
+
+    //faqs-search
+    public function searchFAQs($keyword)
+    {
+        // Convert to lowercase and split into words
+        $words = preg_split('/\s+/', strtolower(trim($keyword)));
+
+        // Remove filler/common words
+        $stopWords = ['how', 'do', 'i', 'the', 'a', 'an', 'to', 'for', 'is', 'on', 'in', 'and', 'you', 'my', 'your'];
+        $filteredWords = array_diff($words, $stopWords);
+
+        // If nothing meaningful left, use all words
+        if (empty($filteredWords)) {
+            $filteredWords = $words;
+        }
+
+        // Build dynamic WHERE clause
+        $conditions = [];
+        foreach ($filteredWords as $index => $word) {
+            $param = ":word$index";
+            $conditions[] = "(LOWER(question) LIKE $param OR LOWER(answer) LIKE $param)";
+        }
+
+        // Safety check
+        if (empty($conditions)) return [];
+
+        // Create a relevance score (counts how many words match)
+        $relevance = [];
+        foreach ($filteredWords as $index => $word) {
+            $relevance[] = "(CASE WHEN LOWER(question) LIKE :rel$index OR LOWER(answer) LIKE :rel$index THEN 1 ELSE 0 END)";
+        }
+
+        $sql = "
+            SELECT *, (" . implode(" + ", $relevance) . ") AS relevance
+            FROM faqs
+            WHERE " . implode(" OR ", $conditions) . "
+            ORDER BY relevance DESC, id ASC
+            LIMIT 5
+        ";
+
+        $query = $this->db->prepare($sql);
+
+        // Bind words twice (for WHERE and relevance scoring)
+        foreach ($filteredWords as $index => $word) {
+            $like = "%" . $word . "%";
+            $query->bindValue(":word$index", $like, PDO::PARAM_STR);
+            $query->bindValue(":rel$index", $like, PDO::PARAM_STR);
+        }
+
+        $query->execute();
+        return $query->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    //fetch all FAQs (for admin view)
+    public function getAllFaqs()
+    {
+        $sql = "SELECT * FROM faqs ORDER BY id DESC";
+        $query = $this->db->prepare($sql);
+        $query->execute();
+        return $query->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // add new FAQ
+    public function addFaq($question, $answer)
+    {
+        $sql = "INSERT INTO faqs (question, answer) VALUES (:question, :answer)";
+        $query = $this->db->prepare($sql);
+        return $query->execute([
+            ':question' => $question,
+            ':answer' => $answer
+        ]);
+    }
+    // update existing FAQ
+    public function updateFaq($id, $question, $answer)
+    {
+        $sql = "UPDATE faqs 
+                SET question = :question, 
+                    answer = :answer 
+                WHERE id = :id";
+        $query = $this->db->prepare($sql);
+        return $query->execute([
+            ':id' => $id,
+            ':question' => $question,
+            ':answer' => $answer
+        ]);
+    }
+
+    // delete FAQ
+    public function deleteFaq($id)
+    {
+        $sql = "DELETE FROM faqs WHERE id = :id";
+        $query = $this->db->prepare($sql);
+        return $query->execute([':id' => $id]);
     }
 
           

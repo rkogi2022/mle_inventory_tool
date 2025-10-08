@@ -56,19 +56,18 @@ define('DB_TYPE', 'mysql');
 define('DB_HOST', '127.0.0.1');
 define('DB_NAME', 'mle_inventory');
 define('DB_USER', 'root');
-define('DB_PASS', 'your_password');
+// define('DB_PASS', 'your_password');
+define('DB_PASS', ''); 
 define('DB_CHARSET', 'utf8');
 
 
 /**
  * Configuration for: Google OAuth Login
  */
-// define('GOOGLE_CLIENT_ID', '1031515607275-pvrh04r5bvu7tuostl2d7de4f20dpbdk.apps.googleusercontent.com');
-// define('GOOGLE_CLIENT_SECRET', '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');
-// define('GOOGLE_REDIRECT_URI', 'https://nuban.eaisnigeria.org/login/googleCallback');
 
-define('GOOGLE_CLIENT_ID', '1031515607275-1qpb9aef9d21s9o73d7hravkbq3dk2l9.apps.googleusercontent.com');
-define('GOOGLE_CLIENT_SECRET', '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');
-define('GOOGLE_REDIRECT_URI', 'https://mleinventory.evidenceaction.org/login/googleCallback');
+
+define('GOOGLE_CLIENT_ID', '1008330128121-22b9m96a6252g66ssbgnk8slthdpr64j.apps.googleusercontent.com');
+define('GOOGLE_CLIENT_SECRET', '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');
+define('GOOGLE_REDIRECT_URI', 'http://localhost/mle_inventory_tool/login/googleCallback');
 
 

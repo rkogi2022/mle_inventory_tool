@@ -238,7 +238,7 @@ function isDropdownActive($pages, $current_page) {
 
             <?php if ($role === 'super_admin'): ?>
                 <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['getPositions', 'getDepartments','getOffices','getLocations'], $current_page); ?>" href="#"
+                    <a class="nav-link dropdown-toggle <?php echo isActive(['getPositions','getFaqs', 'getDepartments','getOffices','getLocations'], $current_page); ?>" href="#"
                        data-bs-toggle="dropdown">ADMIN</a>
                     <div class="dropdown-menu">
                         <a href="<?php echo URL; ?>positions/getPositions"
@@ -249,6 +249,8 @@ function isDropdownActive($pages, $current_page) {
                            class="dropdown-item <?php echo isActive('getOffices', $current_page); ?>">Office</a>
                         <a href="<?php echo URL; ?>location/getLocations"
                            class="dropdown-item <?php echo isActive('getLocations', $current_page); ?>">Location</a>
+                        <a href="<?php echo URL; ?>faq/getFaqs"
+                           class="dropdown-item <?php echo isActive('getFaqs', $current_page); ?>">FAQs</a>
                     </div>
                 </div>
             <?php endif; ?>
@@ -316,11 +318,159 @@ function isDropdownActive($pages, $current_page) {
         </div>
     </div>
 </div>
+<!-- Floating Chat Button -->
+<div id="chat-button" style="
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #007bff;
+  color: white;
+  padding: 12px 18px;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+">
+  💬 How can I help you?
+</div>
 
-<body>
+<!-- Chat Popup -->
+<div id="chat-popup" style="
+  display: none;
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 320px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+">
+  <div style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">
+    Support Bot
+    <span style="float: right; cursor: pointer;" onclick="toggleChat()">✖</span>
+  </div>
+
+  <div id="chat-box" style="height: 240px; overflow-y: auto; padding: 10px;"></div>
+
+  <div style="padding: 10px; border-top: 1px solid #ddd; display: flex; gap: 5px;">
+    <input type="text" id="chat-input" placeholder="Ask a question..." 
+           style="flex: 1; padding: 6px; border-radius: 5px; border: 1px solid #ccc;">
+    <button onclick="askQuestion()" 
+            style="background: #007bff; color: white; border: none; padding: 6px 10px; border-radius: 5px;">
+      Send
+    </button>
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>      
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js" crossorigin="anonymous"></script>
+
+<script>
+function toggleChat() {
+  const popup = document.getElementById('chat-popup');
+  popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+}
+
+document.getElementById('chat-button').onclick = toggleChat;
+
+function askQuestion() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (question === '') return;
+
+  const chatBox = document.getElementById('chat-box');
+  chatBox.innerHTML += `<p><b>You:</b> ${question}</p>`;
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  // Send to backend
+  fetch("<?php echo URL; ?>faq/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "question=" + encodeURIComponent(question)
+  })
+  .then(res => {
+    if (!res.ok) throw new Error("Network response was not ok");
+    return res.json();
+  })
+  .then(data => {
+    console.log("✅ Response from server:", data);
+
+    // If multiple answers found
+    if (data.answers && data.answers.length > 0) {
+      chatBox.innerHTML += `<p><b>Bot:</b> ${data.message}</p>`;
+
+      data.answers.forEach((faq, i) => {
+        const faqDiv = document.createElement('div');
+        faqDiv.className = 'faq-option';
+        faqDiv.style = `
+          margin: 6px 0;
+          padding: 8px;
+          background: #f8f9fa;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        `;
+
+        const questionDiv = document.createElement('div');
+        questionDiv.innerHTML = `<b>Q${i+1}:</b> ${faq.question}`;
+        faqDiv.appendChild(questionDiv);
+
+        const btn = document.createElement('button');
+        btn.innerText = '✅';
+        btn.style = `
+          background: #dbdfe2ff; 
+          color: white; 
+          border: none; 
+          padding: 5px 8px; 
+          border-radius: 5px; 
+          cursor: pointer;
+          font-size: 12px;
+        `;
+
+        // Safe click handler
+        btn.addEventListener('click', () => showAnswer(faq.answer, faq.question));
+        faqDiv.appendChild(btn);
+
+        chatBox.appendChild(faqDiv);
+      });
+    } 
+    // Single or no result
+    else if (data.answer) {
+      chatBox.innerHTML += `<p><b>Bot:</b> ${data.answer}</p>`;
+    } 
+    else {
+      chatBox.innerHTML += `<p><b>Bot:</b> ${data.message || "I couldn’t find an answer to that."}</p>`;
+    }
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+    input.value = '';
+  })
+  .catch(err => {
+    console.error("❌ Fetch error:", err);
+    chatBox.innerHTML += `<p><b>Bot:</b> Sorry, something went wrong.</p>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+  });
+}
+
+// Function to show the selected answer
+function showAnswer(answer, question) {
+  const chatBox = document.getElementById('chat-box');
+  chatBox.innerHTML += `
+    <div style="margin-top: 10px; background: #e9f7ef; padding: 10px; border-radius: 8px;">
+      <p><b>You selected:</b> ${question}</p>
+      <p><b>Bot:</b> ${answer}</p>
+    </div>
+  `;
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+
+
 </body>
 </html>
