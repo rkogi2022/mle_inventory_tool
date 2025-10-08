@@ -52,13 +52,21 @@ define('URL', URL_PROTOCOL . URL_DOMAIN . URL_SUB_FOLDER);
  * Configuration for: Database
  * This is the place where you define your database credentials, database type etc.
  */
+// define('DB_TYPE', 'mysql');
+// define('DB_HOST', '127.0.0.1');
+// define('DB_NAME', 'mle_inventory');
+// define('DB_USER', 'root');
+// // define('DB_PASS', 'your_password');
+// define('DB_PASS', ''); 
+// define('DB_CHARSET', 'utf8');
+
 define('DB_TYPE', 'mysql');
 define('DB_HOST', '127.0.0.1');
 define('DB_NAME', 'mle_inventory');
 define('DB_USER', 'root');
-// define('DB_PASS', 'your_password');
-define('DB_PASS', ''); 
+define('DB_PASS', 'is.team.2024');
 define('DB_CHARSET', 'utf8');
+
 
 
 /**
