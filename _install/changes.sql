@@ -25,3 +25,12 @@ INSERT INTO `faqs` (`id`, `question`, `answer`) VALUES
 (14, 'How do I re-confirm my item/ items?', 'Click \"Assigned Items\" page under \' My Items\' module. This opens a list of items assigned to you. On the Action column, there is a green button \"Confirm\", when you confirm, the button becomes disabled, hence turning grey.'),
 (15, 'How do I view the reconfirmation reports', 'The reports are available on the Assets module, under \'Confirmation Reports\' sub-module. These reports allow you to filter the reports per period i.e., the year and the month the re-confirmation was initiated. You can also use the search field on the table to filter pending and confirmed items.');
 
+
+CREATE TABLE faq_activity (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_email VARCHAR(100) NOT NULL,      -- store email
+    user_name VARCHAR(50) DEFAULT NULL,    -- store derived name
+    searched_text VARCHAR(255) DEFAULT NULL,
+    faq_id INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

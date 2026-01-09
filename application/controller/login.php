@@ -114,23 +114,110 @@ class Login extends Controller
         header('Location:' . URL . 'login/index/');
     }
 
-    // public function loginWithGoogle() {
-    //     session_start();
+    public function loginWithGoogle() {
+        session_start();
     
+        $client = new Google_Client();
+        $client->setClientId('1008330128121-22b9m96a6252g66ssbgnk8slthdpr64j.apps.googleusercontent.com');
+        $client->setClientSecret('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');
+        $client->setRedirectUri('http://localhost/mle_inventory_tool/login/googleCallback');
+        $client->addScope('email');
+        $client->addScope('profile');
+        $client->setPrompt('select_account');
+    
+        $auth_url = $client->createAuthUrl();
+        header('Location: ' . filter_var($auth_url, FILTER_SANITIZE_URL));
+        exit();
+    }
+    
+    public function googleCallback() 
+    {
+        session_start();
+
+        require_once __DIR__ . '/../../vendor/autoload.php';
+        require_once __DIR__ . '/../config/config.php';
+
+        if ($this->model === null) {
+            echo "Model not loaded properly!";
+            exit();
+        }
+
+        try {
+            // Setup Google Client
+            $client = new Google_Client();
+            $client->setClientId('1008330128121-22b9m96a6252g66ssbgnk8slthdpr64j.apps.googleusercontent.com');
+            $client->setClientSecret('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');
+            $client->setRedirectUri('http://localhost/mle_inventory_tool/login/googleCallback');
+            $client->addScope('email');
+            $client->addScope('profile');
+
+            if (!isset($_GET['code'])) {
+                throw new Exception("Authorization code not found in callback.");
+            }
+
+            // Exchange auth code for access token
+            $accessToken = $client->fetchAccessTokenWithAuthCode($_GET['code']);
+
+            if (!is_array($accessToken) || isset($accessToken['error'])) {
+                $errorMsg = isset($accessToken['error_description']) ? $accessToken['error_description'] : json_encode($accessToken);
+                throw new Exception("Access token error: " . $errorMsg);
+            }
+
+            $client->setAccessToken($accessToken['access_token']);
+
+            // Retrieve user info
+            $oauth2 = new \Google\Service\Oauth2($client);
+            $googleUser = $oauth2->userinfo->get();
+
+            if (!isset($googleUser->email)) {
+                throw new Exception("Unable to retrieve Google account email.");
+            }
+
+            $email = $googleUser->email;
+            $staff = $this->model->getStaff($email);
+
+            if ($staff) {
+                $_SESSION['user_email'] = $staff->email;
+                $_SESSION['role'] = $staff->role;
+                $_SESSION['department'] = json_decode($staff->department, true);
+                $_SESSION['position'] = $staff->position;
+                $_SESSION['user'] = ucfirst(explode('@', $staff->email)[0]);
+
+                header('Location: ' . URL . 'home/index/');
+                exit();
+            } else {
+                header('Location: ' . URL . 'login/index?error=user_not_found');
+                exit();
+            }
+        } catch (Exception $e) {
+            error_log("Google Login Error: " . $e->getMessage());
+            header('Location: ' . URL . 'login/index?error=' . urlencode($e->getMessage()));
+            exit();
+        }
+
+
+
+    // public function loginWithGoogle() 
+    // {
+    //     session_start();
+
+    //     require_once __DIR__ . '/../../vendor/autoload.php';
+
     //     $client = new Google_Client();
-    //     $client->setClientId('1008330128121-22b9m96a6252g66ssbgnk8slthdpr64j.apps.googleusercontent.com');
-    //     $client->setClientSecret('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');
-    //     $client->setRedirectUri('http://localhost/mle_inventory_tool/login/googleCallback');
+    //     $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
+    //     $client->setClientSecret('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');
+    //     $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
     //     $client->addScope('email');
     //     $client->addScope('profile');
     //     $client->setPrompt('select_account');
-    
+
     //     $auth_url = $client->createAuthUrl();
     //     header('Location: ' . filter_var($auth_url, FILTER_SANITIZE_URL));
     //     exit();
     // }
-    
-    // public function googleCallback() {
+
+    // public function googleCallback() 
+    // {
     //     session_start();
 
     //     require_once __DIR__ . '/../../vendor/autoload.php';
@@ -142,29 +229,26 @@ class Login extends Controller
     //     }
 
     //     try {
-    //         // Setup Google Client
     //         $client = new Google_Client();
-    //         $client->setClientId('1008330128121-22b9m96a6252g66ssbgnk8slthdpr64j.apps.googleusercontent.com');
-    //         $client->setClientSecret('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');
-    //         $client->setRedirectUri('http://localhost/mle_inventory_tool/login/googleCallback');
-    //         $client->addScope('email');
-    //         $client->addScope('profile');
+    //         $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
+    //         $client->setClientSecret('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');
+    //         $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
 
     //         if (!isset($_GET['code'])) {
     //             throw new Exception("Authorization code not found in callback.");
     //         }
 
-    //         // Exchange auth code for access token
+    //         // Exchange code for access token
     //         $accessToken = $client->fetchAccessTokenWithAuthCode($_GET['code']);
 
     //         if (!is_array($accessToken) || isset($accessToken['error'])) {
-    //             $errorMsg = isset($accessToken['error_description']) ? $accessToken['error_description'] : json_encode($accessToken);
+    //             error_log("Access token fetch error: " . json_encode($accessToken));
+    //             $errorMsg = $accessToken['error_description'] ?? $accessToken['error'] ?? 'Unknown error';
     //             throw new Exception("Access token error: " . $errorMsg);
     //         }
 
     //         $client->setAccessToken($accessToken['access_token']);
 
-    //         // Retrieve user info
     //         $oauth2 = new \Google\Service\Oauth2($client);
     //         $googleUser = $oauth2->userinfo->get();
 
@@ -188,100 +272,18 @@ class Login extends Controller
     //             header('Location: ' . URL . 'login/index?error=user_not_found');
     //             exit();
     //         }
+
     //     } catch (Exception $e) {
     //         error_log("Google Login Error: " . $e->getMessage());
     //         header('Location: ' . URL . 'login/index?error=' . urlencode($e->getMessage()));
     //         exit();
     //     }
-
-
-public function loginWithGoogle() 
-{
-    session_start();
-
-    require_once __DIR__ . '/../../vendor/autoload.php';
-
-    $client = new Google_Client();
-    $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
-    $client->setClientSecret('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');
-    $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
-    $client->addScope('email');
-    $client->addScope('profile');
-    $client->setPrompt('select_account');
-
-    $auth_url = $client->createAuthUrl();
-    header('Location: ' . filter_var($auth_url, FILTER_SANITIZE_URL));
-    exit();
-}
-
-public function googleCallback() 
-{
-    session_start();
-
-    require_once __DIR__ . '/../../vendor/autoload.php';
-    require_once __DIR__ . '/../config/config.php';
-
-    if ($this->model === null) {
-        echo "Model not loaded properly!";
-        exit();
-    }
-
-    try {
-        $client = new Google_Client();
-        $client->setClientId('1031515607275-aousibbi9p6e4cvbq8q585cohe8j4gv2.apps.googleusercontent.com');
-        $client->setClientSecret('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');
-        $client->setRedirectUri('https://mleinventory.evidenceaction.org/login/googleCallback');
-
-        if (!isset($_GET['code'])) {
-            throw new Exception("Authorization code not found in callback.");
-        }
-
-        // Exchange code for access token
-        $accessToken = $client->fetchAccessTokenWithAuthCode($_GET['code']);
-
-        if (!is_array($accessToken) || isset($accessToken['error'])) {
-            error_log("Access token fetch error: " . json_encode($accessToken));
-            $errorMsg = $accessToken['error_description'] ?? $accessToken['error'] ?? 'Unknown error';
-            throw new Exception("Access token error: " . $errorMsg);
-        }
-
-        $client->setAccessToken($accessToken['access_token']);
-
-        $oauth2 = new \Google\Service\Oauth2($client);
-        $googleUser = $oauth2->userinfo->get();
-
-        if (!isset($googleUser->email)) {
-            throw new Exception("Unable to retrieve Google account email.");
-        }
-
-        $email = $googleUser->email;
-        $staff = $this->model->getStaff($email);
-
-        if ($staff) {
-            $_SESSION['user_email'] = $staff->email;
-            $_SESSION['role'] = $staff->role;
-            $_SESSION['department'] = json_decode($staff->department, true);
-            $_SESSION['position'] = $staff->position;
-            $_SESSION['user'] = ucfirst(explode('@', $staff->email)[0]);
-
-            header('Location: ' . URL . 'home/index/');
-            exit();
-        } else {
-            header('Location: ' . URL . 'login/index?error=user_not_found');
-            exit();
-        }
-
-    } catch (Exception $e) {
-        error_log("Google Login Error: " . $e->getMessage());
-        header('Location: ' . URL . 'login/index?error=' . urlencode($e->getMessage()));
-        exit();
-    }
-}
-
-
     // }
-   
+    }
+
 }
+   
+
 
 
 

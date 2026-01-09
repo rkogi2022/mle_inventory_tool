@@ -2724,6 +2724,150 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         return $query->execute([':id' => $id]);
     }
 
+        //log in the searched question
+    public function logFaqSearch($user_email, $user_name, $text)
+    {
+        error_log("=== logFaqSearch called ===");
+        error_log("Email: $user_email");
+        error_log("Name: $user_name");
+        error_log("Text: $text");
+        
+        try {
+            $sql = "INSERT INTO faq_activity (user_email, user_name, searched_text)
+                    VALUES (:email, :name, :text)";
+            $query = $this->db->prepare($sql);
+            
+            $params = [
+                ':email' => $user_email,
+                ':name'  => $user_name,
+                ':text'  => $text
+            ];
+            
+            error_log("Executing SQL with params: " . print_r($params, true));
+            $result = $query->execute($params);
+            
+            $lastId = $this->db->lastInsertId();
+            error_log("✅ Search logged successfully. Insert ID: $lastId");
+            
+            return $lastId; // RETURN THE ID!
+            
+        } catch (PDOException $e) {
+            error_log("❌ Database error in logFaqSearch: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Update existing search record with faq_id
+    public function updateFaqClick($search_log_id, $faq_id)
+    {
+        error_log("=== updateFaqClick called ===");
+        error_log("Search Log ID: $search_log_id");
+        error_log("FAQ ID: $faq_id");
+        
+        try {
+            $sql = "UPDATE faq_activity 
+                    SET faq_id = :faq_id 
+                    WHERE id = :id AND faq_id IS NULL";
+            $stmt = $this->db->prepare($sql);
+
+            $stmt->bindParam(':faq_id', $faq_id, PDO::PARAM_INT);
+            $stmt->bindParam(':id', $search_log_id, PDO::PARAM_INT);
+
+            $result = $stmt->execute();
+            
+            if ($result) {
+                $rowsAffected = $stmt->rowCount();
+                error_log("✅ FAQ click updated successfully. Rows affected: $rowsAffected");
+                return true;
+            } else {
+                $errorInfo = $stmt->errorInfo();
+                error_log("❌ Update failed. Error info: " . print_r($errorInfo, true));
+                return false;
+            }
+        } catch (PDOException $e) {
+            error_log("❌ PDO Exception in updateFaqClick: " . $e->getMessage());
+            return false;
+        }
+    }
+
+        // Log click
+    public function logFaqClick($user_email, $user_name, $faq_id)
+        {
+            error_log("=== logFaqClick called ===");
+            error_log("Email: $user_email");
+            error_log("Name: $user_name");
+            error_log("FAQ ID: $faq_id");
+            
+            try {
+                $sql = "INSERT INTO faq_activity (user_email, user_name, faq_id)
+                        VALUES (:email, :name, :faq_id)";
+                $stmt = $this->db->prepare($sql);
+                
+                error_log("SQL: $sql");
+                error_log("Binding params: email=$user_email, name=$user_name, faq_id=$faq_id");
+                
+                $stmt->bindParam(':email', $user_email, PDO::PARAM_STR);
+                $stmt->bindParam(':name', $user_name, PDO::PARAM_STR);
+                $stmt->bindParam(':faq_id', $faq_id, PDO::PARAM_INT);
+    
+                $result = $stmt->execute();
+                
+                if ($result) {
+                    $lastId = $this->db->lastInsertId();
+                    error_log("✅ Click logged successfully. Insert ID: $lastId");
+                    return true;
+                } else {
+                    $errorInfo = $stmt->errorInfo();
+                    error_log("❌ Execute failed. Error info: " . print_r($errorInfo, true));
+                    return false;
+                }
+            } catch (PDOException $e) {
+                error_log("❌ PDO Exception in logFaqClick: " . $e->getMessage());
+                error_log("❌ SQL error code: " . $e->getCode());
+                error_log("❌ SQL error info: " . $e->errorInfo);
+                return false;
+            }
+        }
+
+    //analytics most searched and most viewed
+    public function getTopSearches()
+    {
+        $sql = "SELECT searched_text, COUNT(*) AS total
+                FROM faq_activity
+                WHERE searched_text IS NOT NULL
+                GROUP BY searched_text
+                ORDER BY total DESC";
+        return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
+    }
+
+    public function getTopViewedFaqs()
+    {
+        $sql = "
+            SELECT 
+                f.id,
+                f.question,
+                COUNT(a.id) AS total
+            FROM faqs f
+            LEFT JOIN faq_activity a 
+                ON f.id = a.faq_id
+            GROUP BY f.id, f.question
+            ORDER BY total DESC
+        ";
+
+        return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
+    }
+
+
+
+    public function getTopUsers()
+    {
+        $sql = "SELECT user_name, user_email, COUNT(*) AS total
+                FROM faq_activity
+                GROUP BY user_email
+                ORDER BY total DESC";
+        return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
+    }
+
           
 }
 

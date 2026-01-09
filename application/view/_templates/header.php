@@ -397,7 +397,7 @@ function askQuestion() {
     return res.json();
   })
   .then(data => {
-    console.log("✅ Response from server:", data);
+    console.log(" Response from server:", data);
 
     // If multiple answers found
     if (data.answers && data.answers.length > 0) {
@@ -434,7 +434,7 @@ function askQuestion() {
         `;
 
         // Safe click handler
-        btn.addEventListener('click', () => showAnswer(faq.answer, faq.question));
+        btn.addEventListener('click', () => showAnswer(faq.answer, faq.question, faq.id));
         faqDiv.appendChild(btn);
 
         chatBox.appendChild(faqDiv);
@@ -458,8 +458,8 @@ function askQuestion() {
   });
 }
 
-// Function to show the selected answer
-function showAnswer(answer, question) {
+// Function to show the selected answer and log the click
+function showAnswer(answer, question, faqId) {
   const chatBox = document.getElementById('chat-box');
   chatBox.innerHTML += `
     <div style="margin-top: 10px; background: #e9f7ef; padding: 10px; border-radius: 8px;">
@@ -468,6 +468,31 @@ function showAnswer(answer, question) {
     </div>
   `;
   chatBox.scrollTop = chatBox.scrollHeight;
+  
+  // Log the click to your backend
+  logFaqClick(faqId);
+}
+
+// Function to log FAQ click
+function logFaqClick(faqId) {
+  fetch("<?php echo URL; ?>faq/logClick", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "faq_id=" + encodeURIComponent(faqId)
+  })
+  .then(res => {
+    if (!res.ok) throw new Error("Network response was not ok");
+    return res.json();
+  })
+  .then(data => {
+    console.log("✅ FAQ click logged:", data);
+    if (data.status === 'error') {
+      console.error("Failed to log click:", data.message);
+    }
+  })
+  .catch(err => {
+    console.error("❌ Error logging FAQ click:", err);
+  });
 }
 </script>
 
