@@ -2858,13 +2858,18 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
     }
 
 
-
     public function getTopUsers()
     {
-        $sql = "SELECT user_name, user_email, COUNT(*) AS total
-                FROM faq_activity
-                GROUP BY user_email
-                ORDER BY total DESC";
+        $sql = "
+            SELECT 
+                user_name,
+                user_email,
+                COUNT(*) AS total
+            FROM faq_activity
+            GROUP BY user_name, user_email
+            ORDER BY total DESC
+        ";
+
         return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
     }
 
