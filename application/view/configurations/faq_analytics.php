@@ -87,6 +87,7 @@
                     <tr>
                         <th>User Name</th>
                         <th>Email</th>
+                        <th>Position</th>
                         <th>Activity Count</th>
                     </tr>
                 </thead>
@@ -94,13 +95,28 @@
                 <?php if (!empty($topUsers)): ?>
                     <?php foreach ($topUsers as $user): ?>
                         <tr>
-                            <td><?= htmlspecialchars($user->user_name) ?></td>
+                            <td>
+                                <?php 
+                                // Display formatted name if available, otherwise fallback to user_name
+                                if (isset($user->display_name) && !empty($user->display_name)) {
+                                    echo htmlspecialchars($user->display_name);
+                                } else {
+                                    echo htmlspecialchars($user->user_name);
+                                }
+                                ?>
+                            </td>
                             <td><?= htmlspecialchars($user->user_email) ?></td>
+                            <td>
+                                <?php 
+                                // Display position if available, otherwise show "N/A"
+                                echo htmlspecialchars($user->position_name ?? 'N/A'); 
+                                ?>
+                            </td>
                             <td><?= $user->total ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="3" class="text-center">No user activity found.</td></tr>
+                    <tr><td colspan="4" class="text-center">No user activity found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

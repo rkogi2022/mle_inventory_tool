@@ -6,6 +6,8 @@ class Model
 {
     private $db;
     private $validCategories = ['Laptop', 'Smart Phone', 'Monitor', 'Mouse', 'Printer', 'CPU'];
+    private $validTicketCategories = ['hardware', 'training', 'other'];
+    private $validPriorities = ['low', 'medium', 'high', 'critical'];
 
     public function __construct($db)
     {
@@ -17,26 +19,6 @@ class Model
         
     }
 
-    //     protected $db;
-
-    // public function __construct()
-    // {
-    //     require_once __DIR__ . '/../config/config.php';
-
-    //     // echo "Loaded config file path: " . __FILE__ . "<br>";
-    //     // echo "DB_NAME = " . DB_NAME . "<br>";
-
-    //     try {
-    //         $this->db = new PDO(
-    //             DB_TYPE . ':host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET,
-    //             DB_USER,
-    //             DB_PASS
-    //         );
-    //         // echo "✅ Connected to database: " . DB_NAME . "<br>";
-    //     } catch (PDOException $e) {
-    //         die("❌ Connection failed: " . $e->getMessage());
-    //     }
-    // }
   /** ---------------- Login and User management Functions-------------------- **/
 
     // login function
@@ -2421,7 +2403,7 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         return $stmt->fetch(PDO::FETCH_OBJ);
     }
 
-    //confirming items periodically
+    /** ---------------- Confirming Items Periodically Models -------------------- **/
     // 1. Set the admin button to enable or disable reconfirmation
     public function updateReconfirmStatusForAll($enabled)
     {
@@ -2630,6 +2612,7 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         return $grouped;
     }
 
+    /** ---------------- FAQs Models -------------------- **/
     //faqs-search
     public function searchFAQs($keyword)
     {
@@ -2792,42 +2775,42 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
 
         // Log click
     public function logFaqClick($user_email, $user_name, $faq_id)
-        {
-            error_log("=== logFaqClick called ===");
-            error_log("Email: $user_email");
-            error_log("Name: $user_name");
-            error_log("FAQ ID: $faq_id");
+    {
+        error_log("=== logFaqClick called ===");
+        error_log("Email: $user_email");
+        error_log("Name: $user_name");
+        error_log("FAQ ID: $faq_id");
+        
+        try {
+            $sql = "INSERT INTO faq_activity (user_email, user_name, faq_id)
+                    VALUES (:email, :name, :faq_id)";
+            $stmt = $this->db->prepare($sql);
             
-            try {
-                $sql = "INSERT INTO faq_activity (user_email, user_name, faq_id)
-                        VALUES (:email, :name, :faq_id)";
-                $stmt = $this->db->prepare($sql);
-                
-                error_log("SQL: $sql");
-                error_log("Binding params: email=$user_email, name=$user_name, faq_id=$faq_id");
-                
-                $stmt->bindParam(':email', $user_email, PDO::PARAM_STR);
-                $stmt->bindParam(':name', $user_name, PDO::PARAM_STR);
-                $stmt->bindParam(':faq_id', $faq_id, PDO::PARAM_INT);
-    
-                $result = $stmt->execute();
-                
-                if ($result) {
-                    $lastId = $this->db->lastInsertId();
-                    error_log("✅ Click logged successfully. Insert ID: $lastId");
-                    return true;
-                } else {
-                    $errorInfo = $stmt->errorInfo();
-                    error_log("❌ Execute failed. Error info: " . print_r($errorInfo, true));
-                    return false;
-                }
-            } catch (PDOException $e) {
-                error_log("❌ PDO Exception in logFaqClick: " . $e->getMessage());
-                error_log("❌ SQL error code: " . $e->getCode());
-                error_log("❌ SQL error info: " . $e->errorInfo);
+            error_log("SQL: $sql");
+            error_log("Binding params: email=$user_email, name=$user_name, faq_id=$faq_id");
+            
+            $stmt->bindParam(':email', $user_email, PDO::PARAM_STR);
+            $stmt->bindParam(':name', $user_name, PDO::PARAM_STR);
+            $stmt->bindParam(':faq_id', $faq_id, PDO::PARAM_INT);
+
+            $result = $stmt->execute();
+            
+            if ($result) {
+                $lastId = $this->db->lastInsertId();
+                error_log("✅ Click logged successfully. Insert ID: $lastId");
+                return true;
+            } else {
+                $errorInfo = $stmt->errorInfo();
+                error_log("❌ Execute failed. Error info: " . print_r($errorInfo, true));
                 return false;
             }
+        } catch (PDOException $e) {
+            error_log("❌ PDO Exception in logFaqClick: " . $e->getMessage());
+            error_log("❌ SQL error code: " . $e->getCode());
+            error_log("❌ SQL error info: " . $e->errorInfo);
+            return false;
         }
+    }
 
     //analytics most searched and most viewed
     public function getTopSearches()
@@ -2857,23 +2840,224 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
     }
 
-
     public function getTopUsers()
     {
         $sql = "
             SELECT 
-                user_name,
-                user_email,
+                CASE 
+                    WHEN a.user_email LIKE '%.%@%' THEN 
+                        -- For emails with dots in local part (rita.kogi@gmail.com)
+                        CONCAT(
+                            UPPER(SUBSTRING(SUBSTRING_INDEX(a.user_email, '.', 1), 1, 1)),
+                            LOWER(SUBSTRING(SUBSTRING_INDEX(a.user_email, '.', 1), 2)),
+                            ' ',
+                            UPPER(SUBSTRING(
+                                SUBSTRING_INDEX(
+                                    SUBSTRING_INDEX(a.user_email, '@', 1),
+                                    '.',
+                                    -1
+                                ), 1, 1)),
+                            LOWER(SUBSTRING(
+                                SUBSTRING_INDEX(
+                                    SUBSTRING_INDEX(a.user_email, '@', 1),
+                                    '.',
+                                    -1
+                                ), 2))
+                        )
+                    ELSE 
+                        -- For emails without dots in local part (admin@test.com)
+                        -- Just capitalize the first letter of the local part
+                        CONCAT(
+                            UPPER(SUBSTRING(SUBSTRING_INDEX(a.user_email, '@', 1), 1, 1)),
+                            LOWER(SUBSTRING(SUBSTRING_INDEX(a.user_email, '@', 1), 2))
+                        )
+                END AS display_name,
+                a.user_name,
+                a.user_email,
+                p.position_name,
                 COUNT(*) AS total
-            FROM faq_activity
-            GROUP BY user_name, user_email
+            FROM faq_activity a
+            LEFT JOIN staff_login sl ON a.user_email = sl.email
+            LEFT JOIN positions p ON sl.position = p.id
+            GROUP BY a.user_name, a.user_email, p.position_name
             ORDER BY total DESC
         ";
 
         return $this->db->query($sql)->fetchAll(PDO::FETCH_OBJ);
     }
 
-          
+/** ---------------- Ticket Models -------------------- **/
+    public function getAllHardwareItems() {
+        $stmt = $this->db->query("SELECT id, description, serial_number FROM inventory WHERE category_id = 1"); // assume 1 = hardware
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function createTicket($data)
+    {
+        try {
+            $sql = "INSERT INTO tickets 
+                    (ticket_number, user_id, subject, description, category, subcategory, priority, 
+                    page_url, attachment_path, attachment_name, created_at) 
+                    VALUES 
+                    (:ticket_number, :user_id, :subject, :description, :category, :subcategory, :priority, 
+                    :page_url, :attachment_path, :attachment_name, :created_at)";
+
+            $stmt = $this->db->prepare($sql);
+
+            // Bind required fields
+            $stmt->bindParam(':ticket_number', $data['ticket_number']);
+            $stmt->bindParam(':user_id', $data['user_id']);
+            $stmt->bindParam(':subject', $data['subject']);
+            $stmt->bindParam(':description', $data['description']);
+            $stmt->bindParam(':category', $data['category']);
+            $stmt->bindParam(':subcategory', $data['subcategory']);
+            $stmt->bindParam(':priority', $data['priority']);
+            $stmt->bindParam(':page_url', $data['page_url']);
+            $stmt->bindParam(':created_at', $data['created_at']);
+
+            // Handle optional fields
+            if (!empty($data['attachment_path'])) {
+                $stmt->bindParam(':attachment_path', $data['attachment_path']);
+            } else {
+                $stmt->bindValue(':attachment_path', null, PDO::PARAM_NULL);
+            }
+
+            if (!empty($data['attachment_name'])) {
+                $stmt->bindParam(':attachment_name', $data['attachment_name']);
+            } else {
+                $stmt->bindValue(':attachment_name', null, PDO::PARAM_NULL);
+            }
+
+            // Execute and return inserted ID
+            if ($stmt->execute()) {
+                return $this->db->lastInsertId();
+            }
+
+            return false;
+        } catch (PDOException $e) {
+            error_log("Ticket creation error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function getUserAssignedItems($user_id)
+    {
+        try {
+            $sql = "SELECT i.id, i.serial_number, i.model, i.brand, c.category_name 
+                    FROM inventory i
+                    JOIN categories c ON i.category_id = c.id
+                    WHERE i.assigned_to = :user_id 
+                    AND i.status = 'assigned'
+                    ORDER BY i.model, i.brand";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching user items: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    public function verifyUserItemOwnership($user_id, $inventory_id)
+    {
+        try {
+            $sql = "SELECT COUNT(*) as count 
+                    FROM inventory 
+                    WHERE assigned_to = :user_id 
+                    AND id = :inventory_id 
+                    AND status = 'assigned'";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+            $stmt->bindParam(':inventory_id', $inventory_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result['count'] > 0;
+        } catch (PDOException $e) {
+            error_log("Error verifying item ownership: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function getDailyTicketCount()
+    {
+        try {
+            $today = date('Y-m-d');
+            $sql = "SELECT COUNT(*) as count FROM tickets WHERE DATE(created_at) = :today";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':today', $today);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result['count'];
+        } catch (PDOException $e) {
+            error_log("Error getting daily ticket count: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    public function generateTicketNumber()
+    {
+        // Simple ticket number: TKT + year + month + day + 4 random digits
+        $prefix = 'TKT';
+        $date = date('Ymd');
+        $random = rand(1000, 9999);
+        
+        return $prefix . $date . $random;
+    }
+
+    public function getTicketCategories()
+    {
+        return $this->validTicketCategories;
+    }
+
+    public function getTicketPriorities()
+    {
+        return $this->validPriorities;
+    }
+
+    public function isValidTicketCategory($category)
+    {
+        return in_array($category, $this->validTicketCategories);
+    }
+
+    public function isValidPriority($priority)
+    {
+        return in_array($priority, $this->validPriorities);
+    }
+
+    /**
+     * Get ticket by ID
+     */
+    public function getTicketById($ticket_id)
+    {
+        try {
+            $sql = "SELECT t.*, u.name as creator_name, u.email as creator_email
+                    FROM tickets t
+                    LEFT JOIN staff_login u ON t.user_id = u.id
+                    WHERE t.id = :id
+                    LIMIT 1";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':id', $ticket_id);
+            $stmt->execute();
+            
+            $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $ticket ?: false;
+            
+        } catch (PDOException $e) {
+            error_log("ERROR in getTicketById: " . $e->getMessage());
+            return false;
+        }
+    }
+
+
 }
+          
+
 
 
