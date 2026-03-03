@@ -34,3 +34,8 @@ CREATE TABLE faq_activity (
     faq_id INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+ALTER TABLE `inventory_assignment` 
+ADD COLUMN `last_reminder_sent_at` DATETIME DEFAULT NULL,
+ADD COLUMN `reminder_count` INT DEFAULT 0;

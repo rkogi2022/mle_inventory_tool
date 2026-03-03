@@ -397,115 +397,84 @@ function isActive($pages, $current) {
 
     <div class="collapse navbar-collapse justify-content-between" id="navbarNav">
         <div class="navbar-nav mx-auto d-flex align-items-center gap-3">
-            <?php if ($role === 'admin' || $role === 'staff' || $role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['inventoryreturn', 'myreturns'], $current_page); ?>"
-                       href="#" data-bs-toggle="dropdown">MY ITEMS</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>inventoryreturn"
-                           class="dropdown-item <?php echo isActive('inventoryreturn', $current_page); ?>">Assigned Items</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/myreturns"
-                           class="dropdown-item <?php echo isActive('myreturns', $current_page); ?>">Returned Items</a>
-                    </div>
-                </div>
-            <?php endif; ?>
 
-            <?php if ($role === 'admin' || $role === 'super_admin'): ?>
-                <a href="<?php echo URL; ?>inventoryassignment"
-                   class="nav-item nav-link <?php echo isActive('inventoryassignment', $current_page); ?>">ASSIGNMENTS</a>
-            <?php endif; ?>
+            <!-- CONSUMABLES DROPDOWN -->
+            <div class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle <?php echo isActive('consumables', $current_page) || isActive('quarterlySummary', $current_page) ? 'active' : ''; ?>" 
+                href="#" 
+                id="consumablesDropdown" 
+                role="button" 
+                data-bs-toggle="dropdown" 
+                aria-expanded="false">
+                    CONSUMABLES
+                </a>
 
-            <?php if ($role === 'admin' || $role === 'staff' || $role === 'super_admin'): ?>
-                <a href="<?php echo URL; ?>inventoryassignment/pending"
-                   class="nav-item nav-link <?php echo isActive('pending', $current_page); ?>">PENDING ASSIGNMENTS</a>
-            <?php endif; ?>
+                <ul class="dropdown-menu" aria-labelledby="consumablesDropdown">
+                    <li>
+                        <a class="dropdown-item <?php echo isActive('consumables', $current_page); ?>" 
+                        href="<?php echo URL; ?>consumables">
+                            All Consumables
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item <?php echo isActive('quarterlySummary', $current_page); ?>" 
+                        href="<?php echo URL; ?>consumables/quarterlySummary">
+                            Quarterly Summary
+                        </a>
+                    </li>
+                </ul>
+            </div>
 
-            <?php if ($role === 'admin' || $role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['unassignedItems', 'assignedItems','dashboard','reconfirmationReport'], $current_page); ?>"
-                       href="#" data-bs-toggle="dropdown">ASSETS</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>inventoryreturn/unassignedItems"
-                           class="dropdown-item <?php echo isActive('unassignedItems', $current_page); ?>">In-Stock</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/assignedItems"
-                           class="dropdown-item <?php echo isActive('assignedItems', $current_page); ?>">In-Use</a>
-                        <a href="<?php echo URL; ?>dashboard"
-                           class="dropdown-item <?php echo isActive('dashboard', $current_page); ?>">Staff Dashboard</a>
-                        <a href="<?php echo URL; ?>inventoryassignment/reconfirmationReport"
-                           class="dropdown-item <?php echo isActive('reconfirmationReport', $current_page); ?>">Confirmation Reports</a>
-                    </div>
-                </div>
-            <?php endif; ?>
+        <!-- NON-CONSUMABLES Dropdown -->
+        <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle <?php echo isActive('nonconsumables', $current_page) || isActive('bulk_nonconsumables', $current_page) ? 'active' : ''; ?>" 
+            href="#" 
+            id="nonconsumablesDropdown" 
+            role="button" 
+            data-bs-toggle="dropdown" 
+            aria-expanded="false">
+                NON-CONSUMABLES
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="nonconsumablesDropdown">
+                <li>
+                    <a class="dropdown-item <?php echo isActive('nonconsumables', $current_page); ?>" 
+                    href="<?= URL ?>nonconsumables">
+                    Serialized Items
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item <?php echo isActive('nonconsumables/bulkNonconsumables', $current_page); ?>" 
+                    href="<?= URL ?>nonconsumables/bulkNonconsumables">
+                    Bulk Items
+                    </a>
+                </li>
+            </ul>
+        </li>
 
-            <?php if ($role === 'admin' || $role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['approve', 'lostItems','damagedItems','disposedItems','disapprovedItems'], $current_page); ?>" href="#"
-                       data-bs-toggle="dropdown">COLLECTIONS</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>inventoryreturn/approve"
-                           class="dropdown-item <?php echo isActive('approve', $current_page); ?>">Pending Approvals</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/lostItems"
-                           class="dropdown-item <?php echo isActive('lostItems', $current_page); ?>">Lost Inventory</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/damagedItems"
-                           class="dropdown-item <?php echo isActive('damagedItems', $current_page); ?>">Repairs</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/disposedItems"
-                           class="dropdown-item <?php echo isActive('disposedItems', $current_page); ?>">Disposed</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/disapprovedItems"
-                           class="dropdown-item <?php echo isActive('disapprovedItems', $current_page); ?>">Disapproved</a>
-                    </div>
-                </div>
-            <?php endif; ?>
+        <!-- GEARS Dropdown -->
+        <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle <?php echo isActive('gears', $current_page) || isActive('issued_per_staff', $current_page) ? 'active' : ''; ?>"
+            href="#"
+            id="gearsDropdown"
+            role="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false">
+            GEARS
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="gearsDropdown">
+                <li>
+                    <a class="dropdown-item <?php echo isActive('gears', $current_page); ?>" href="<?php echo URL; ?>gears">
+                        Gear Inventory
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item <?php echo isActive('issued_per_staff', $current_page); ?>" href="<?php echo URL; ?>gears/issuedStaffList">
+                        Issued Gear
+                    </a>
+                </li>
+            </ul>
+        </li>
 
-            <?php if ($role === 'admin' || $role === 'staff' || $role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['staffassignments', 'staffreturneditems'], $current_page); ?>"
-                       href="#" data-bs-toggle="dropdown">REPORTS</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>inventoryassignment/staffassignments"
-                           class="dropdown-item <?php echo isActive('staffassignments', $current_page); ?>">Staff Assignments</a>
-                        <a href="<?php echo URL; ?>inventoryreturn/staffreturneditems"
-                           class="dropdown-item <?php echo isActive('staffreturneditems', $current_page); ?>">Staff Returned Items</a>
-                        <a href="<?php echo URL; ?>faq/analytics"
-                           class="dropdown-item <?php echo isActive('staffreturneditems', $current_page); ?>">FAQ Analytics</a>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($role === 'admin' || $role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['inventory','getTickets', 'getCategory','getUsers'], $current_page); ?>" href="#"
-                       data-bs-toggle="dropdown">CONFIGURATIONS</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>inventory"
-                           class="dropdown-item <?php echo isActive('inventory', $current_page); ?>">Inventory</a>
-                        <a href="<?php echo URL; ?>categories/getCategory"
-                           class="dropdown-item <?php echo isActive('getCategory', $current_page); ?>">Categories</a>
-                        <a href="<?php echo URL; ?>users/getUsers"
-                           class="dropdown-item <?php echo isActive('getUsers', $current_page); ?>">Users</a>
-                        <a href="<?php echo URL; ?>ticket/viewall"
-                           class="dropdown-item <?php echo isActive('getTickets', $current_page); ?>">Tickets</a>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($role === 'super_admin'): ?>
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo isActive(['getPositions','getFaqs', 'getDepartments','getOffices','getLocations'], $current_page); ?>" href="#"
-                       data-bs-toggle="dropdown">ADMIN</a>
-                    <div class="dropdown-menu">
-                        <a href="<?php echo URL; ?>positions/getPositions"
-                           class="dropdown-item <?php echo isActive('getPositions', $current_page); ?>">Positions</a>
-                        <a href="<?php echo URL; ?>department/getDepartments"
-                           class="dropdown-item <?php echo isActive('getDepartments', $current_page); ?>">Departments</a>
-                        <a href="<?php echo URL; ?>office/getOffices"
-                           class="dropdown-item <?php echo isActive('getOffices', $current_page); ?>">Office</a>
-                        <a href="<?php echo URL; ?>location/getLocations"
-                           class="dropdown-item <?php echo isActive('getLocations', $current_page); ?>">Location</a>
-                        <a href="<?php echo URL; ?>faq/getFaqs"
-                           class="dropdown-item <?php echo isActive('getFaqs', $current_page); ?>">FAQs</a>
-                    </div>
-                </div>
-            <?php endif; ?>
         </div>
         
         <div class="d-flex align-items-center gap-3">
@@ -513,14 +482,17 @@ function isActive($pages, $current) {
                 <div style="position:relative;display:inline-block;">
                     <span id="profileTrigger" onclick="toggleProfileCard()" style="cursor:pointer;">
                         <i class="fas fa-user-circle" style="font-size:22px;color:#e600a0;"></i>
-                        <b style="margin-left:6px;font-size:16px;"><?php echo htmlspecialchars($user_name); ?></b>
+                        <b style="margin-left:6px;font-size:16px;">
+                            <?php echo htmlspecialchars($user_name); ?>
+                        </b>
                     </span>
+
                     <div id="profileCard" style="display:none;position:absolute;top:40px;right:0;background:#fff;border:1px solid #ddd;border-radius:16px;padding:25px;width:380px;box-shadow:0px 8px 20px rgba(0,0,0,0.15);font-size:15px;line-height:1.7;z-index:999;">
-                        <p><i class="fas fa-smile text-warning"></i> <strong>Name:</strong> <span id="cardName"></span></p>
-                        <p><i class="fas fa-envelope text-danger"></i> <strong>Email:</strong> <span id="cardEmail"></span></p>
-                        <p><i class="fas fa-building text-info"></i> <strong>Department:</strong> <span id="cardDepartment"></span></p>
-                        <p><i class="fas fa-briefcase text-success"></i> <strong>Position:</strong> <span id="cardPosition"></span></p>
-                        <p><i class="fas fa-map-marker-alt text-muted"></i> <strong>Duty Station:</strong> <span id="cardDuty"></span></p>
+                        <p><strong>Name:</strong> <span id="cardName"></span></p>
+                        <p><strong>Email:</strong> <span id="cardEmail"></span></p>
+                        <p><strong>Department:</strong> <span id="cardDepartment"></span></p>
+                        <p><strong>Position:</strong> <span id="cardPosition"></span></p>
+                        <p><strong>Duty Station:</strong> <span id="cardDuty"></span></p>
                         <div style="text-align:center;margin-top:20px;">
                             <a href="<?php echo URL; ?>login/logout" class="bt-logout">LOGOUT</a>
                         </div>
@@ -529,10 +501,11 @@ function isActive($pages, $current) {
             <?php endif; ?>
         </div>
     </div>
+
 </div>
 
 <!-- CHAT BUTTONS - ORIGINAL -->
-<div id="chat-button" style="position:fixed;bottom:20px;right:20px;background:#007bff;color:white;padding:12px 18px;border-radius:30px;cursor:pointer;box-shadow:0 4px 8px rgba(0,0,0,0.2);z-index:9999;">💬 How can I help you?</div>
+<!-- <div id="chat-button" style="position:fixed;bottom:20px;right:20px;background:#007bff;color:white;padding:12px 18px;border-radius:30px;cursor:pointer;box-shadow:0 4px 8px rgba(0,0,0,0.2);z-index:9999;">💬 How can I help you?</div>
 <div id="chat-popup" style="display:none;position:fixed;bottom:80px;right:20px;width:320px;background:white;border-radius:10px;border:1px solid #ccc;box-shadow:0 4px 8px rgba(0,0,0,0.2);z-index:9999;">
     <div style="padding:10px;border-bottom:1px solid #ddd;font-weight:bold;">Support Bot<span style="float:right;cursor:pointer;" onclick="toggleChat()">✖</span></div>
     <div id="chat-box" style="height:240px;overflow-y:auto;padding:10px;"></div>
@@ -540,10 +513,10 @@ function isActive($pages, $current) {
         <input type="text" id="chat-input" placeholder="Ask a question..." style="flex:1;padding:6px;border-radius:5px;border:1px solid #ccc;">
         <button onclick="askQuestion()" style="background:#007bff;color:white;border:none;padding:6px 10px;border-radius:5px;">Send</button>
     </div>
-</div>
+</div> -->
 
-<!-- TICKET WIZARD - ORIGINAL STYLES, FIXED FUNCTIONS
-<div id="ticket-floating-btn" class="ticket-floating-btn">
+<!-- TICKET WIZARD - ORIGINAL STYLES, FIXED FUNCTIONS -->
+<!-- <div id="ticket-floating-btn" class="ticket-floating-btn">
     <button onclick="openTicketWizard()">
         <i class="fas fa-life-ring"></i> 
         <span>Raise a Ticket</span>

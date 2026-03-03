@@ -23,7 +23,7 @@ class inventoryassignment extends Controller
         require APP . 'view/inventory_assignments/index.php';
     }
 
-// Add new assignment
+    // Add new assignment
     public function add()
     {
         if ($this->model === null) {
@@ -166,8 +166,7 @@ class inventoryassignment extends Controller
         }
     }
 
-    //email to manager to tell them their supervisee were assigned items
-    protected function sendAssignmentNotificationToManager($managerEmail, $managerName, $recipientName, $itemList)
+        protected function sendAssignmentNotificationToManager($managerEmail, $managerName, $recipientName, $itemList)
     {
         $mail = new PHPMailer(true);
 
@@ -226,83 +225,133 @@ class inventoryassignment extends Controller
             error_log("PHPMailer Manager Error: " . $mail->ErrorInfo);
         }
     }
-//one time reminder
-    protected function sendReminderToUnacknowledgedUsers($usersWithPendingAssignments)
-    {
-        $batchSize = 10;
-        $totalUsers = count($usersWithPendingAssignments);
-        $batches = array_chunk($usersWithPendingAssignments, $batchSize);
 
-        foreach ($batches as $index => $batch) {
-            foreach ($batch as $user) {
-                $recipientEmail = $user['email'];
-                $recipientName = ucwords(str_replace('.', ' ', explode('@', $recipientEmail)[0]));
+//automated reminder
+protected function sendReminderToUnacknowledgedUsers($usersWithPendingAssignments)
+{
+    $batchSize = 10;
+    $totalUsers = count($usersWithPendingAssignments);
+    $batches = array_chunk($usersWithPendingAssignments, $batchSize);
 
-                $mail = new PHPMailer(true);
+    foreach ($batches as $index => $batch) {
+        foreach ($batch as $user) {
+            $recipientEmail = $user['email'];
+            $recipientName = ucwords(str_replace('.', ' ', explode('@', $recipientEmail)[0]));
 
-                try {
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com';
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'information.systems@evidenceaction.org';
-                    $mail->Password   = 'rtnbqnbajjhcifbr'; // Consider using env var
-                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail->Port       = 587;
-                    $mail->SMTPKeepAlive = true;
+            // Get reminder count for this user
+            $reminderCount = $this->getReminderCountForUser($recipientEmail);
+            
+            $mail = new PHPMailer(true);
 
-                    $mail->setFrom('information.systems@evidenceaction.org', 'MLE Inventory Tool');
+            try {
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'information.systems@evidenceaction.org';
+                $mail->Password   = 'rtnbqnbajjhcifbr'; // Consider using env var
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                $mail->Port       = 587;
+                $mail->SMTPKeepAlive = true;
 
-                    // For testing:
-                    // $mail->addAddress('rita.kogi@evidenceaction.org');
-                    // For production:
-                    $mail->addAddress($recipientEmail, $recipientName);
-                    $mail->addBCC('information.systems@evidenceaction.org');
+                $mail->setFrom('information.systems@evidenceaction.org', 'MLE Inventory Tool');
 
-                    $mail->isHTML(true);
-                    $mail->CharSet = 'UTF-8';
+                // For testing:
+                // $mail->addAddress('rita.kogi@evidenceaction.org');
+                // For production:
+                $mail->addAddress($recipientEmail, $recipientName);
+                $mail->addBCC('information.systems@evidenceaction.org');
+
+                $mail->isHTML(true);
+                $mail->CharSet = 'UTF-8';
+                
+                // Customize subject based on reminder count
+                if ($reminderCount == 0) {
                     $mail->Subject = 'Reminder: Please Acknowledge Your Assigned Item(s) in MLE Inventory Tool';
-
-                    $mail->Body = "
-                        <p>Dear {$recipientName},</p>
-
-                        <p>Our records show that you have been assigned one or more inventory items, but you have not yet acknowledged receipt in the <strong>MLE Inventory Tool</strong>.</p>
-
-                        <p><strong>Action Required:</strong> Kindly log in to the system and acknowledge the item(s) assigned to you as soon as possible.</p>
-
-                        <p><a href='https://mleinventory.evidenceaction.org/login/index'>Click here to log in</a></p>
-
-                        <p>If there’s a mismatch between the listed items and what you actually received, or if you're unable to access your account, please contact:</p>
-                        <ul>
-                            <li><a href='mailto:johnmark.oyugi@evidenceaction.org'>johnmark.oyugi@evidenceaction.org</a></li>
-                            <li><a href='mailto:terence.wandera@evidenceaction.org'>terence.wandera@evidenceaction.org</a></li>
-                        </ul>
-
-                        <p>If you're experiencing navigation or technical difficulties, feel free to reach out to me directly at <a href='mailto:rita.kogi@evidenceaction.org'>rita.kogi@evidenceaction.org</a>.</p>
-
-                        <p>Thank you for your cooperation.</p>
-
-                        <p>Best regards,<br>
-                        Rita Kogi<br>
-                        Associate, Information Systems<br>
-                        Evidence Action</p>
-                    ";
-
-                    $mail->AltBody = "Dear {$recipientName},\n\nYou have unacknowledged inventory items. Please log in to https://mleinventory.evidenceaction.org/login/index to acknowledge. For support, contact johnmark.oyugi@evidenceaction.org or terence.wandera@evidenceaction.org.\n\nRegards,\nRita Kogi";
-
-                    $mail->send();
-
-                    error_log("Reminder email sent to: {$recipientEmail}");
-                } catch (Exception $e) {
-                    error_log("PHPMailer Error (Reminder): {$mail->ErrorInfo}");
+                } else {
+                    $mail->Subject = 'Follow-up Reminder #' . ($reminderCount + 1) . ': Pending Item Acknowledgment Required';
                 }
-            }
 
-            // Optional: Pause briefly between batches to reduce SMTP load or avoid timeouts
-            sleep(1); // pause 1 second after each batch
+                // Get days pending
+                $daysPending = $this->getDaysPendingForUser($recipientEmail);
+                
+                $mail->Body = "
+                    <p>Dear {$recipientName},</p>
+
+                    <p>Our records show that you have been assigned one or more inventory items that are now <strong>{$daysPending} days overdue</strong> for acknowledgment in the <strong>MLE Inventory Tool</strong>.</p>
+                    
+                    <p><strong>Reminder #" . ($reminderCount + 1) . "</strong></p>
+
+                    <p><strong>Action Required:</strong> Kindly log in to the system and acknowledge the item(s) assigned to you as soon as possible. Items must be acknowledged within 30 days of assignment.</p>
+
+                    <p><a href='https://mleinventory.evidenceaction.org/login/index' style='background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>Click here to log in</a></p>
+
+                    <p>If there's a mismatch between the listed items and what you actually received, or if you're unable to access your account, please contact:</p>
+                    <ul>
+                        <li><a href='mailto:johnmark.oyugi@evidenceaction.org'>johnmark.oyugi@evidenceaction.org</a></li>
+                        <li><a href='mailto:terence.wandera@evidenceaction.org'>terence.wandera@evidenceaction.org</a></li>
+                    </ul>
+
+                    <p>If you're experiencing navigation or technical difficulties, feel free to reach out to anyone in the IS department.</p>
+
+                    <p><em>Note: This is an automated reminder. You will continue to receive reminders every 30 days until the items are acknowledged.</em></p>
+
+                    <p>Thank you for your cooperation.</p>
+
+                    <p>Best regards,<br>
+                    MLE-D DEPARTMENT<br>
+                    Evidence Action</p>
+                ";
+
+                $mail->AltBody = "Dear {$recipientName},\n\nYou have unacknowledged inventory items that are {$daysPending} days overdue. Reminder #" . ($reminderCount + 1) . ". Please log in to https://mleinventory.evidenceaction.org/login/index to acknowledge. For support, contact johnmark.oyugi@evidenceaction.org or terence.wandera@evidenceaction.org.\n\nYou will receive reminders every 30 days until acknowledgment.\n\nRegards,\nRita Kogi";
+
+                $mail->send();
+                
+                // Update reminder tracking in database
+                $this->model->updateReminderTracking($recipientEmail);
+
+                error_log("Reminder #" . ($reminderCount + 1) . " email sent to: {$recipientEmail} (Days pending: {$daysPending})");
+            } catch (Exception $e) {
+                error_log("PHPMailer Error (Reminder): {$mail->ErrorInfo} for email: {$recipientEmail}");
+            }
         }
 
-        error_log("✅ Finished sending reminder emails to {$totalUsers} users in " . count($batches) . " batches.");
+        // Pause briefly between batches to reduce SMTP load or avoid timeouts
+        sleep(1); // pause 1 second after each batch
     }
+
+    error_log("✅ Finished sending reminder emails to {$totalUsers} users in " . count($batches) . " batches.");
+}
+
+// Helper method
+protected function getReminderCountForUser($email)
+{
+    $sql = "SELECT MAX(reminder_count) as count 
+            FROM inventory_assignment 
+            WHERE email = :email 
+            AND acknowledgment_status = 'pending'";
+    
+    $query = $this->db->prepare($sql);
+    $query->bindValue(':email', $email, PDO::PARAM_STR);
+    $query->execute();
+    $result = $query->fetch(PDO::FETCH_ASSOC);
+    
+    return $result ? (int)$result['count'] : 0;
+}
+
+protected function getDaysPendingForUser($email)
+{
+    $sql = "SELECT DATEDIFF(CURDATE(), MIN(date_assigned)) as days_pending 
+            FROM inventory_assignment 
+            WHERE email = :email 
+            AND acknowledgment_status = 'pending'";
+    
+    $query = $this->db->prepare($sql);
+    $query->bindValue(':email', $email, PDO::PARAM_STR);
+    $query->execute();
+    $result = $query->fetch(PDO::FETCH_ASSOC);
+    
+    return $result ? $result['days_pending'] : 30;
+}
 
 public function triggerAcknowledgmentReminders()
 {
@@ -314,27 +363,22 @@ public function triggerAcknowledgmentReminders()
         exit();
     }
 
-    $batchSize = 10;
-    $offset = isset($_GET['offset']) ? intval($_GET['offset']) : 0;
-
-    $users = $this->model->getUsersWithPendingAcknowledgment($batchSize, $offset);
+    // Use the NEW method that gets ALL users
+    $users = $this->model->getAllUsersWithPendingAcknowledgment();
 
     if (!empty($users)) {
+        // This function already handles batching internally
         $this->sendReminderToUnacknowledgedUsers($users);
-
-        $nextOffset = $offset + $batchSize;
-
-        // Auto-continue with next batch
-        header("Refresh: 2; URL=" . URL . "inventoryassignment/triggerAcknowledgmentReminders?offset={$nextOffset}");
-        echo "Batch sent (offset $offset). Continuing...";
+        
+        $_SESSION['reminder_success'] = "✅ All reminder emails sent to " . count($users) . " users.";
+        header("Location: " . URL . "inventoryassignment/index");
         exit();
     } else {
-        $_SESSION['reminder_success'] = "✅ All reminder emails sent.";
+        $_SESSION['reminder_success'] = "No users with pending acknowledgments found.";
         header("Location: " . URL . "inventoryassignment/index");
         exit();
     }
 }
-
 
 
     //edit assignment

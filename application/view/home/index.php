@@ -20,23 +20,30 @@ $role = $_SESSION['role'] ?? null;
     <?php if($role === 'staff'): ?>
       <div class="card" style="background-color:#05545a;" 
            onClick="to_url('<?php echo URL . 'inventoryreturn'; ?>')">
-        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">MLE INVENTORY TOOL</b>
+        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">ELECTRONICS INVENTORY TOOL</b>
       </div>
       <?php endif; ?>
 
       <?php if( $role === 'super_admin'): ?>
       <div class="card" style="background-color:#20253a;" 
            onClick="to_url('<?php echo URL . 'users/getUsers'; ?>')">
-        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">MLE INVENTORY TOOL</b>
+        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">ELECTRONICS INVENTORY TOOL</b>
       </div>
       <?php endif; ?>
 
       <?php if($role === 'admin' ): ?>
       <div class="card" style="background-color:#e600a0;" 
            onClick="to_url('<?php echo URL . 'inventoryassignment'; ?>')">
-        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">MLE INVENTORY TOOL</b>
+        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">ELECTRONICS INVENTORY TOOL</b>
       </div>
       <?php endif; ?>
+
+      <!-- <?php if ($role === 'admin' || $role === 'super_admin'): ?>
+      <div class="card" style="background-color:#e600a0;" 
+           onClick="to_url('<?php echo URL . 'consumables'; ?>')">
+        <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">LAB INVENTORY TOOL</b>
+      </div>
+      <?php endif; ?> -->
 
   </div>
 </div>

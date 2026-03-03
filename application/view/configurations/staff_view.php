@@ -51,6 +51,10 @@
                     <!-- Add User button -->
                     <button class="add-btn" onclick="openUserModal()">Add User</button>
                 </div>
+                <button class="add-btn" onclick="window.location.href='<?= URL ?>inventoryassignment/triggerAcknowledgmentReminders'">
+                    Trigger
+                </button>
+
             </div>
         </div>
 

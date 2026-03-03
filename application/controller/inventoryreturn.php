@@ -1,5 +1,4 @@
 <?php
-
 class inventoryreturn extends Controller
 {
 
@@ -599,6 +598,9 @@ class inventoryreturn extends Controller
         fclose($output);
         exit();
     }
+
+        // Email to manager to notify them that their supervisee has returned item(s)
+
     
 
 

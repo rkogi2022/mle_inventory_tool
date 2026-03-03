@@ -1,13 +1,15 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 class Model
 {
     private $db;
     private $validCategories = ['Laptop', 'Smart Phone', 'Monitor', 'Mouse', 'Printer', 'CPU'];
     private $validTicketCategories = ['hardware', 'training', 'other'];
     private $validPriorities = ['low', 'medium', 'high', 'critical'];
+    private $validStatuses = ['open', 'ongoing', 'resolved', 'closed'];
 
     public function __construct($db)
     {
@@ -774,9 +776,10 @@ class Model
 
 
     // Assign items to users
-    public function addAssignment($user_id, $item_ids, $date_assigned, $manager_email)
-    {
-        // Get manager email
+public function addAssignment($user_id, $item_ids, $date_assigned, $manager_email)
+{
+    try {
+        // 1️⃣ Get manager email
         $manager = $this->getManagerEmail($manager_email);
         if (!$manager) {
             return "Invalid manager email: " . htmlspecialchars($manager_email);
@@ -785,12 +788,12 @@ class Model
             return ucfirst(strtolower($part));
         }, preg_split('/[._]/', strtok($manager['email'], '@'))));
 
+        // 2️⃣ Get user details
         $userSql = "SELECT 
                         email,
                         CONCAT(COALESCE(department, 'N/A'), ' ', COALESCE(position, 'N/A')) AS role
                     FROM staff_login
                     WHERE id = :user_id";
-
         $userQuery = $this->db->prepare($userSql);
         $userQuery->execute([':user_id' => $user_id]);
         $user = $userQuery->fetch(PDO::FETCH_ASSOC);
@@ -803,9 +806,13 @@ class Model
             return ucfirst(strtolower($part));
         }, preg_split('/[._]/', strtok($user['email'], '@'))));
 
+        // 3️⃣ Initialize item list for email
+        $itemList = [];
+
+        // 4️⃣ Loop through items and assign
         foreach ($item_ids as $item_id) {
-            // Get item details
-            $itemSql = "SELECT serial_number, tag_number FROM inventory WHERE id = :item_id";
+            // Fetch item details
+            $itemSql = "SELECT description, serial_number, tag_number FROM inventory WHERE id = :item_id";
             $itemQuery = $this->db->prepare($itemSql);
             $itemQuery->execute([':item_id' => $item_id]);
             $item = $itemQuery->fetch(PDO::FETCH_ASSOC);
@@ -816,14 +823,14 @@ class Model
 
             // Check if item already assigned
             $checkSql = "SELECT COUNT(*) FROM inventory_assignment 
-                        WHERE item = :item_id AND acknowledgment_status IN ('pending', 'approved')";
+                         WHERE item = :item_id AND acknowledgment_status IN ('pending', 'approved')";
             $checkQuery = $this->db->prepare($checkSql);
             $checkQuery->execute([':item_id' => $item_id]);
             if ($checkQuery->fetchColumn() > 0) {
                 return "Item with ID $item_id is already assigned.";
             }
 
-            // Prepare parameters with formatted name and manager
+            // Insert assignment record
             $parameters = [
                 ':name' => $formattedUserName,
                 ':email' => $user['email'],
@@ -834,7 +841,7 @@ class Model
                 ':managed_by' => $managed_by,
                 ':date_assigned' => $date_assigned
             ];
-            // Insert into inventory_assignment
+
             $sql = "INSERT INTO inventory_assignment 
                         (name, email, role, item, serial_number, tag_number, managed_by, acknowledgment_status, created_at, updated_at, date_assigned)
                     VALUES 
@@ -845,9 +852,80 @@ class Model
                 $errorInfo = $query->errorInfo();
                 return "Failed to assign item with ID $item_id. Error: " . $errorInfo[2];
             }
+
+            // Add item to email list
+            $itemList[] = "Description: {$item['description']}, Serial Number: {$item['serial_number']}, Tag Number: {$item['tag_number']}";
         }
 
-        return "Items successfully assigned!";
+        // 5️⃣ Send notification to manager
+        $this->sendAssignmentNotificationToManager($manager_email, $managed_by, $formattedUserName, $itemList);
+
+        return "Items successfully assigned and manager notified!";
+
+    } catch (PDOException $e) {
+        die("<strong>SQL Exception:</strong> " . $e->getMessage());
+    } catch (Exception $e) {
+        die("<strong>General Exception:</strong> " . $e->getMessage());
+    }
+}
+    protected function sendAssignmentNotificationToManager($managerEmail, $managerName, $recipientName, $itemList)
+    {
+        $mail = new PHPMailer(true);
+
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'information.systems@evidenceaction.org';
+            $mail->Password   = 'rtnbqnbajjhcifbr';
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+
+            $mail->setFrom('information.systems@evidenceaction.org', 'MLE Inventory Tool');
+            $mail->addAddress($managerEmail, $managerName);
+            $mail->addBCC('information.systems@evidenceaction.org');
+
+            $mail->isHTML(true);
+            $mail->Subject = "Notification: {$recipientName} Assigned Inventory Item(s)";
+
+            $itemListHtml = "<ul>";
+            foreach ($itemList as $item) {
+                $parts = explode(',', $item);
+                $formattedParts = [];
+                foreach ($parts as $part) {
+                    $labelValue = explode(':', $part, 2);
+                    if (count($labelValue) == 2) {
+                        $label = htmlspecialchars(trim($labelValue[0]));
+                        $value = htmlspecialchars(trim($labelValue[1]));
+                        $formattedParts[] = "<strong>{$label}:</strong> {$value}";
+                    } else {
+                        $formattedParts[] = htmlspecialchars($part);
+                    }
+                }
+                $itemListHtml .= "<li>" . implode(', ', $formattedParts) . "</li>";
+            }
+            $itemListHtml .= "</ul>";
+
+            $mail->Body = "
+                <p>Dear {$managerName},</p>
+
+                <p>This is to notify you that your supervisee <strong>{$recipientName}</strong> has been assigned the following inventory item(s):</p>
+
+                {$itemListHtml}
+
+                <p>If you believe this assignment is incorrect, kindly contact the IT department immediately.</p>
+
+                <p>Regards,<br>MLE Inventory Tool</p>
+            ";
+
+            $mail->AltBody = "{$recipientName} has been assigned inventory item(s).";
+
+            $mail->CharSet = 'UTF-8';
+            $mail->send();
+            error_log("Manager notification sent to: {$managerEmail}");
+        } catch (Exception $e) {
+            error_log("PHPMailer Manager Error: " . $mail->ErrorInfo);
+        }
     }
 
     // //add single assignment
@@ -1244,20 +1322,58 @@ class Model
         return $query->fetchAll(PDO::FETCH_ASSOC);
     }
 
-public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
-{
-    $sql = "SELECT DISTINCT email 
-            FROM inventory_assignment 
-            WHERE acknowledgment_status = 'pending'
-            LIMIT :limit OFFSET :offset";
-    $query = $this->db->prepare($sql);
-    $query->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $query->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $query->execute();
+    //automated email notifications sent to users who have pending assignments that are 30 days old that recurs in 30 day intervals
+    public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
+    {
+        $sql = "SELECT DISTINCT email 
+                FROM inventory_assignment 
+                WHERE acknowledgment_status = 'pending' 
+                AND date_assigned <= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                AND (
+                    last_reminder_sent_at IS NULL 
+                    OR last_reminder_sent_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                )
+                LIMIT :limit OFFSET :offset";
+        
+        $query = $this->db->prepare($sql);
+        $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $query->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $query->execute();
 
-    return $query->fetchAll(PDO::FETCH_ASSOC);
-}
+        return $query->fetchAll(PDO::FETCH_ASSOC);
+    }
 
+    public function getAllUsersWithPendingAcknowledgment()
+    {
+        $sql = "SELECT DISTINCT email 
+                FROM inventory_assignment 
+                WHERE acknowledgment_status = 'pending' 
+                AND date_assigned <= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                AND (
+                    last_reminder_sent_at IS NULL 
+                    OR last_reminder_sent_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                )";
+        // No LIMIT clause - gets ALL users at once
+        
+        $query = $this->db->prepare($sql);
+        $query->execute();
+
+        return $query->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // Add method to update reminder tracking
+    public function updateReminderTracking($email)
+    {
+        $sql = "UPDATE inventory_assignment 
+                SET last_reminder_sent_at = NOW(), 
+                    reminder_count = reminder_count + 1 
+                WHERE email = :email 
+                AND acknowledgment_status = 'pending'";
+        
+        $query = $this->db->prepare($sql);
+        $query->bindValue(':email', $email, PDO::PARAM_STR);
+        return $query->execute();
+    }
 
             //item returning process...
         //model to show returned item
@@ -1368,28 +1484,196 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         return $query->fetchAll(PDO::FETCH_ASSOC);
     }
     
-    //returning items
+    //returning items(original)
+    // public function recordReturn($assignment_id, $returned_by_email, $receiver_id, $return_date)
+    // {
+    //     try {
+    //         $sql = "INSERT INTO inventory_returned 
+    //                     (assignment_id, returned_by, receiver_id, return_date, status, created_at, updated_at) 
+    //                 VALUES 
+    //                     (:assignment_id, :returned_by, :receiver_id, :return_date, 'pending', NOW(), NOW())";
+            
+    //         $stmt = $this->db->prepare($sql);
+    //         return $stmt->execute([
+    //             ':assignment_id' => $assignment_id,
+    //             ':returned_by' => $returned_by_email,
+    //             ':receiver_id' => $receiver_id,
+    //             ':return_date' => $return_date
+    //         ]);
+    //     } catch (PDOException $e) {
+    //         die("<br><strong>SQL Exception:</strong> " . $e->getMessage());
+    //     }
+    // }
     public function recordReturn($assignment_id, $returned_by_email, $receiver_id, $return_date)
     {
         try {
+            // 1️⃣ Insert return record
             $sql = "INSERT INTO inventory_returned 
                         (assignment_id, returned_by, receiver_id, return_date, status, created_at, updated_at) 
                     VALUES 
                         (:assignment_id, :returned_by, :receiver_id, :return_date, 'pending', NOW(), NOW())";
-            
+
             $stmt = $this->db->prepare($sql);
-            return $stmt->execute([
+            $success = $stmt->execute([
                 ':assignment_id' => $assignment_id,
                 ':returned_by' => $returned_by_email,
                 ':receiver_id' => $receiver_id,
                 ':return_date' => $return_date
             ]);
+
+            if (!$success) {
+                error_log("Failed to insert return record for assignment: {$assignment_id}");
+                echo "Failed to insert return record for assignment: {$assignment_id}<br>";
+                return false;
+            }
+
+            // 2️⃣ Get assignment details
+            $assignmentSql = "
+                SELECT ia.id, ia.name AS staff_name, ia.managed_by AS manager_name, i.serial_number, i.tag_number
+                FROM inventory_assignment ia
+                INNER JOIN inventory i ON ia.item = i.id
+                WHERE ia.id = :assignment_id
+            ";
+            $assignmentStmt = $this->db->prepare($assignmentSql);
+            $assignmentStmt->execute([':assignment_id' => $assignment_id]);
+            $assignmentData = $assignmentStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$assignmentData) {
+                error_log("No assignment found with ID: {$assignment_id}");
+                echo "No assignment found with ID: {$assignment_id}<br>";
+                return false;
+            }
+
+            $staffName = $assignmentData['staff_name'];
+            $managerName = $assignmentData['manager_name'];
+            $itemDetails = [
+                [
+                    'serial_number' => $assignmentData['serial_number'],
+                    'tag_number' => $assignmentData['tag_number']
+                ]
+            ];
+
+            // 3️⃣ Lookup manager email by name
+            $managerEmail = null;
+            $managers = $this->getManagers(); // returns array with ['name' => 'Rita Kogi', 'email' => 'rita.kogi@example.com']
+
+            foreach ($managers as $mgr) {
+                if (trim(strtolower($mgr['name'])) === trim(strtolower($managerName))) {
+                    $managerEmail = $mgr['email'];
+                    break;
+                }
+            }
+
+            if (!$managerEmail) {
+                error_log("Manager email not found for: {$managerName}");
+                echo "Manager email not found for: {$managerName}<br>";
+            } else {
+                // 4️⃣ Send email
+                $this->sendReturnNotificationToManager(
+                    $managerEmail,
+                    $managerName,
+                    $staffName,
+                    $itemDetails,
+                    $return_date
+                );
+            }
+
+            return $assignmentData;
+
         } catch (PDOException $e) {
             die("<br><strong>SQL Exception:</strong> " . $e->getMessage());
         }
     }
-    
- 
+    protected function sendReturnNotificationToManager($managerEmail, $managerName, $staffName, $itemDetails, $returnDate)
+    {
+        $mail = new PHPMailer(true);
+
+        try {
+            // SMTP Configuration
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'information.systems@evidenceaction.org';
+            $mail->Password   = 'rtnbqnbajjhcifbr'; // Use App Password
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+            $mail->CharSet    = 'UTF-8';
+
+            // 🔹 Enable SMTP debug
+            $mail->SMTPDebug = 2; // 0 = off, 1 = client, 2 = client+server
+            $mail->Debugoutput = 'error_log'; // logs to PHP error_log
+
+            // Email headers
+            $mail->setFrom('information.systems@evidenceaction.org', 'MLE Inventory Tool');
+            $mail->addAddress($managerEmail, $managerName);
+            $mail->addBCC('information.systems@evidenceaction.org');
+
+            // Email subject & body
+            $mail->isHTML(true);
+            $mail->Subject = "Notification: {$staffName} Returned Inventory Item(s)";
+
+            $itemListHtml = "<ul>";
+            foreach ($itemDetails as $item) {
+                $serial = htmlspecialchars($item['serial_number'] ?? 'N/A');
+                $tag = htmlspecialchars($item['tag_number'] ?? 'N/A');
+                $itemListHtml .= "<li><strong>Serial Number:</strong> {$serial} <br> <strong>Tag Number:</strong> {$tag}</li>";
+            }
+            $itemListHtml .= "</ul>";
+
+            $mail->Body = "
+                <p>Dear {$managerName},</p>
+                <p>Your supervisee <strong>{$staffName}</strong> has returned the following inventory item(s) on <strong>{$returnDate}</strong>:</p>
+                {$itemListHtml}
+                <p>The items are currently <strong>pending approval</strong>.</p>
+                <p>Regards,<br>MLE Inventory Tool</p>
+            ";
+
+            $mail->AltBody = "{$staffName} has returned inventory item(s) on {$returnDate}. Items are pending approval.";
+
+            if (!$mail->send()) {
+                // 🔹 Output errors to browser for debugging
+                echo "Mailer Error: " . $mail->ErrorInfo . "<br>";
+                error_log("Mailer failed: " . $mail->ErrorInfo);
+                return false;
+            }
+
+            echo "Email sent successfully to {$managerEmail}<br>";
+            error_log("Return notification sent to: {$managerEmail}");
+            return true;
+
+        } catch (Exception $e) {
+            // 🔹 Output exception details
+            echo "PHPMailer Exception: " . $e->getMessage() . "<br>";
+            error_log("PHPMailer Exception: " . $e->getMessage());
+            error_log("PHPMailer Debug Info: " . $mail->ErrorInfo);
+            return false;
+        }
+    }
+
+    public function getManagerFromAssignment($assignment_id)
+    {
+        $sql = "SELECT 
+                    ia.managed_by,
+                    sl.email
+                FROM inventory_assignment ia
+                LEFT JOIN staff_login sl 
+                    ON CONCAT(
+                        UPPER(LEFT(SUBSTRING_INDEX(SUBSTRING_INDEX(sl.email, '@', 1), '.', 1), 1)),
+                        LOWER(SUBSTRING(SUBSTRING_INDEX(SUBSTRING_INDEX(sl.email, '@', 1), '.', 1), 2)),
+                        ' ',
+                        UPPER(LEFT(SUBSTRING_INDEX(SUBSTRING_INDEX(sl.email, '@', 1), '.', -1), 1)),
+                        LOWER(SUBSTRING(SUBSTRING_INDEX(SUBSTRING_INDEX(sl.email, '@', 1), '.', -1), 2))
+                    ) = ia.managed_by
+                WHERE ia.id = :assignment_id
+                LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':assignment_id', $assignment_id);
+        $stmt->execute();
+
+        return $stmt->fetch(PDO::FETCH_OBJ);
+    }
+
     public function getItemReturnStatus($assignment_id, $item_id)
     {
         $sql = "SELECT status FROM inventory_returned WHERE assignment_id = :assignment_id AND item_id = :item_id LIMIT 1";
@@ -2887,20 +3171,38 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
     }
 
 /** ---------------- Ticket Models -------------------- **/
+    //Get all hardware items
     public function getAllHardwareItems() {
-        $stmt = $this->db->query("SELECT id, description, serial_number FROM inventory WHERE category_id = 1"); // assume 1 = hardware
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            // Check if we need to join with categories or directly query inventory
+            $sql = "SELECT id, description, serial_number, model, brand, category_id 
+                    FROM inventory 
+                    WHERE category_id IN (
+                        SELECT id FROM categories WHERE category_name LIKE '%hardware%' 
+                        OR category_name LIKE '%laptop%' 
+                        OR category_name LIKE '%computer%'
+                    ) 
+                    OR category_id = 1"; // fallback to ID 1 if category mapping exists
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching hardware items: " . $e->getMessage());
+            return [];
+        }
     }
 
+    //Create a new ticket with all fields
     public function createTicket($data)
     {
         try {
             $sql = "INSERT INTO tickets 
                     (ticket_number, user_id, subject, description, category, subcategory, priority, 
-                    page_url, attachment_path, attachment_name, created_at) 
+                    page_url, attachment_path, attachment_name, status, created_at) 
                     VALUES 
                     (:ticket_number, :user_id, :subject, :description, :category, :subcategory, :priority, 
-                    :page_url, :attachment_path, :attachment_name, :created_at)";
+                    :page_url, :attachment_path, :attachment_name, :status, :created_at)";
 
             $stmt = $this->db->prepare($sql);
 
@@ -2914,6 +3216,10 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
             $stmt->bindParam(':priority', $data['priority']);
             $stmt->bindParam(':page_url', $data['page_url']);
             $stmt->bindParam(':created_at', $data['created_at']);
+            
+            // Add status (default to 'open')
+            $status = $data['status'] ?? 'open';
+            $stmt->bindParam(':status', $status);
 
             // Handle optional fields
             if (!empty($data['attachment_path'])) {
@@ -2940,15 +3246,53 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         }
     }
 
+    //Generate unique ticket number with sequential format
+    public function generateTicketNumber()
+    {
+        try {
+            $year = date('Y');
+            $prefix = 'TKT-' . $year . '-';
+            
+            // Get the last ticket number for this year
+            $sql = "SELECT ticket_number FROM tickets 
+                    WHERE ticket_number LIKE :pattern 
+                    ORDER BY id DESC LIMIT 1";
+            
+            $stmt = $this->db->prepare($sql);
+            $pattern = $prefix . '%';
+            $stmt->bindParam(':pattern', $pattern);
+            $stmt->execute();
+            
+            $lastTicket = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($lastTicket) {
+                $lastNumber = intval(str_replace($prefix, '', $lastTicket['ticket_number']));
+                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            } else {
+                $newNumber = '0001';
+            }
+            
+            return $prefix . $newNumber;
+            
+        } catch (PDOException $e) {
+            error_log("Error generating ticket number: " . $e->getMessage());
+            // Fallback to timestamp-based number
+            return 'TKT-' . date('Ymd-His') . '-' . rand(100, 999);
+        }
+    }
+
+    // Get user assigned inventory items
     public function getUserAssignedItems($user_id)
     {
         try {
-            $sql = "SELECT i.id, i.serial_number, i.model, i.brand, c.category_name 
+            // Check if assigned_to column exists in inventory table
+            // Based on your table structure, items are assigned to users via custodian field
+            $sql = "SELECT i.id, i.serial_number, i.tag_number, i.description, 
+                        i.custodian, i.location, c.category_name 
                     FROM inventory i
-                    JOIN categories c ON i.category_id = c.id
-                    WHERE i.assigned_to = :user_id 
-                    AND i.status = 'assigned'
-                    ORDER BY i.model, i.brand";
+                    LEFT JOIN categories c ON i.category_id = c.id
+                    WHERE i.custodian = :user_id 
+                    ORDER BY i.description, i.serial_number";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
@@ -2961,14 +3305,14 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         }
     }
 
+    // Verify user owns an inventory item
     public function verifyUserItemOwnership($user_id, $inventory_id)
     {
         try {
             $sql = "SELECT COUNT(*) as count 
                     FROM inventory 
-                    WHERE assigned_to = :user_id 
-                    AND id = :inventory_id 
-                    AND status = 'assigned'";
+                    WHERE custodian = :user_id 
+                    AND id = :inventory_id";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
@@ -2983,6 +3327,7 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         }
     }
 
+    //Get daily ticket count
     public function getDailyTicketCount()
     {
         try {
@@ -3001,49 +3346,64 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
         }
     }
 
-    public function generateTicketNumber()
-    {
-        // Simple ticket number: TKT + year + month + day + 4 random digits
-        $prefix = 'TKT';
-        $date = date('Ymd');
-        $random = rand(1000, 9999);
-        
-        return $prefix . $date . $random;
-    }
-
+    //Get ticket categories
     public function getTicketCategories()
     {
         return $this->validTicketCategories;
     }
 
+    // Get ticket priorities
     public function getTicketPriorities()
     {
         return $this->validPriorities;
     }
 
+    // Get ticket statuses
+    public function getTicketStatuses()
+    {
+        return $this->validStatuses;
+    }
+
+    //Validate ticket category
     public function isValidTicketCategory($category)
     {
         return in_array($category, $this->validTicketCategories);
     }
 
+    // Validate priority
     public function isValidPriority($priority)
     {
         return in_array($priority, $this->validPriorities);
     }
 
-    /**
-     * Get ticket by ID
-     */
+    // Validate status
+    public function isValidStatus($status)
+    {
+        return in_array($status, $this->validStatuses);
+    }
+
+    // get ticket by ID with detailed information
     public function getTicketById($ticket_id)
     {
         try {
-            $sql = "SELECT t.*, u.name as creator_name, u.email as creator_email
+            $sql = "SELECT t.*, 
+                           u.email as creator_email,
+                           CONCAT(u.first_name, ' ', u.last_name) as creator_name,
+                           d.department_name,
+                           a.email as assigned_email,
+                           CONCAT(a.first_name, ' ', a.last_name) as assigned_name,
+                           r.email as resolver_email,
+                           CONCAT(r.first_name, ' ', r.last_name) as resolver_name
                     FROM tickets t
-                    LEFT JOIN staff_login u ON t.user_id = u.id
+                    JOIN staff_login u ON t.user_id = u.id
+                    LEFT JOIN departments d ON u.department = d.id
+                    LEFT JOIN staff_login a ON t.assigned_to = a.id
+                    LEFT JOIN staff_login r ON t.resolved_by = r.id
                     WHERE t.id = :id
                     LIMIT 1";
+            
             $stmt = $this->db->prepare($sql);
-            $stmt->bindParam(':id', $ticket_id);
+            $stmt->bindParam(':id', $ticket_id, PDO::PARAM_INT);
             $stmt->execute();
             
             $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -3054,6 +3414,1087 @@ public function getUsersWithPendingAcknowledgment($limit = 10, $offset = 0)
             return false;
         }
     }
+
+    // Update ticket status
+
+    public function updateTicketStatus($ticket_id, $status, $user_id, $notes = '', $assigned_to = null)
+    {
+        try {
+            // Start transaction
+            $this->db->beginTransaction();
+            
+            // Get current status
+            $currentStatus = $this->getTicketStatus($ticket_id);
+            
+            // Update ticket
+            $updateData = [
+                'status' => $status,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+            
+            if ($assigned_to !== null) {
+                $updateData['assigned_to'] = $assigned_to;
+            }
+            
+            if ($status === 'resolved' && $currentStatus !== 'resolved') {
+                $updateData['resolved_by'] = $user_id;
+                $updateData['resolved_at'] = date('Y-m-d H:i:s');
+            }
+            
+            $setClause = implode(', ', array_map(function($k) { 
+                return "$k = :$k"; 
+            }, array_keys($updateData)));
+            
+            $sql = "UPDATE tickets SET $setClause WHERE id = :id";
+            $stmt = $this->db->prepare($sql);
+            
+            foreach ($updateData as $key => $value) {
+                $stmt->bindValue(":$key", $value);
+            }
+            $stmt->bindValue(':id', $ticket_id, PDO::PARAM_INT);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to update ticket status");
+            }
+            
+            // Log status change
+            $logSql = "INSERT INTO ticket_status_log 
+                      (ticket_id, old_status, new_status, changed_by, notes, created_at)
+                      VALUES (:ticket_id, :old_status, :new_status, :changed_by, :notes, NOW())";
+            
+            $logStmt = $this->db->prepare($logSql);
+            $logStmt->execute([
+                ':ticket_id' => $ticket_id,
+                ':old_status' => $currentStatus,
+                ':new_status' => $status,
+                ':changed_by' => $user_id,
+                ':notes' => $notes
+            ]);
+            
+            // Commit transaction
+            $this->db->commit();
+            return true;
+            
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            error_log("Error updating ticket status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    //Get ticket status
+    public function getTicketStatus($ticket_id)
+    {
+        try {
+            $sql = "SELECT status FROM tickets WHERE id = :id LIMIT 1";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':id', $ticket_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result ? $result['status'] : null;
+        } catch (PDOException $e) {
+            error_log("Error getting ticket status: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    //Get ticket status history
+    public function getTicketStatusHistory($ticket_id)
+    {
+        try {
+            $sql = "SELECT l.*, 
+                           CONCAT(u.first_name, ' ', u.last_name) as changed_by_name
+                    FROM ticket_status_log l
+                    JOIN staff_login u ON l.changed_by = u.id
+                    WHERE l.ticket_id = :ticket_id
+                    ORDER BY l.created_at DESC";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':ticket_id', $ticket_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting status history: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Submit ticket feedback
+    public function submitTicketFeedback($ticket_id, $rating, $satisfaction, $comments = '')
+    {
+        try {
+            // Start transaction
+            $this->db->beginTransaction();
+            
+            // Insert feedback
+            $feedbackSql = "INSERT INTO ticket_feedback 
+                           (ticket_id, rating, satisfaction, comments, submitted_at)
+                           VALUES (:ticket_id, :rating, :satisfaction, :comments, NOW())";
+            
+            $feedbackStmt = $this->db->prepare($feedbackSql);
+            $feedbackStmt->execute([
+                ':ticket_id' => $ticket_id,
+                ':rating' => $rating,
+                ':satisfaction' => $satisfaction,
+                ':comments' => $comments
+            ]);
+            
+            // Update ticket
+            $updateSql = "UPDATE tickets SET feedback_submitted = 1 WHERE id = :ticket_id";
+            $updateStmt = $this->db->prepare($updateSql);
+            $updateStmt->execute([':ticket_id' => $ticket_id]);
+            
+            $this->db->commit();
+            return true;
+            
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            error_log("Error submitting feedback: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Get ticket feedback
+    public function getTicketFeedback($ticket_id)
+    {
+        try {
+            $sql = "SELECT * FROM ticket_feedback WHERE ticket_id = :ticket_id LIMIT 1";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':ticket_id', $ticket_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting ticket feedback: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    //Get support staff for assignment
+    public function getSupportStaff()
+    {
+        try {
+            $sql = "SELECT s.id, s.email, 
+                           CONCAT(s.first_name, ' ', s.last_name) as name,
+                           d.department_name
+                    FROM staff_login s
+                    JOIN departments d ON s.department = d.id
+                    WHERE (d.department_name LIKE '%Information Systems%'
+                           OR d.department_name LIKE '%Information System%'
+                           OR d.department_name LIKE '%IT%'
+                           OR d.department_name LIKE '%Information Technology%')
+                      AND s.email IS NOT NULL
+                      AND s.role IN ('admin', 'super_admin', 'staff')
+                    ORDER BY s.first_name, s.last_name";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting support staff: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Check if user can manage ticket
+    public function canUserManageTicket($user_id, $ticket_id)
+    {
+        try {
+            // Get ticket info
+            $ticket = $this->getTicketById($ticket_id);
+            if (!$ticket) {
+                return false;
+            }
+            
+            // If user is ticket creator
+            if ($ticket['user_id'] == $user_id) {
+                return true;
+            }
+            
+            // Check if user is in support department
+            $sql = "SELECT COUNT(*) as count 
+                    FROM staff_login s
+                    JOIN departments d ON s.department = d.id
+                    WHERE s.id = :user_id
+                      AND (d.department_name LIKE '%Information Systems%'
+                           OR d.department_name LIKE '%Information System%'
+                           OR d.department_name LIKE '%IT%'
+                           OR d.department_name LIKE '%Information Technology%')";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result['count'] > 0;
+            
+        } catch (PDOException $e) {
+            error_log("Error checking ticket management permissions: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    //Get ticket statistics
+     
+    public function getTicketStatistics($period = 'month')
+    {
+        try {
+            $stats = [];
+            
+            switch ($period) {
+                case 'day':
+                    $dateCondition = "DATE(created_at) = CURDATE()";
+                    break;
+                case 'week':
+                    $dateCondition = "YEARWEEK(created_at) = YEARWEEK(CURDATE())";
+                    break;
+                case 'month':
+                    $dateCondition = "MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE())";
+                    break;
+                case 'year':
+                    $dateCondition = "YEAR(created_at) = YEAR(CURDATE())";
+                    break;
+                default:
+                    $dateCondition = "1=1";
+            }
+            
+            // Total tickets
+            $sql = "SELECT COUNT(*) as total FROM tickets WHERE $dateCondition";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $stats['total'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // By status
+            $sql = "SELECT status, COUNT(*) as count 
+                    FROM tickets 
+                    WHERE $dateCondition 
+                    GROUP BY status";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $stats['by_status'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // By category
+            $sql = "SELECT category, COUNT(*) as count 
+                    FROM tickets 
+                    WHERE $dateCondition 
+                    GROUP BY category";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $stats['by_category'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // By priority
+            $sql = "SELECT priority, COUNT(*) as count 
+                    FROM tickets 
+                    WHERE $dateCondition 
+                    GROUP BY priority";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $stats['by_priority'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $stats;
+            
+        } catch (PDOException $e) {
+            error_log("Error getting ticket statistics: " . $e->getMessage());
+            return [
+                'total' => 0,
+                'by_status' => [],
+                'by_category' => [],
+                'by_priority' => []
+            ];
+        }
+    }
+
+    // Get all tickets (for support staff/admin)
+    public function getAllTickets() {
+        try {
+            $sql = "SELECT t.*, 
+                        u.email as requester_email,
+                        d.department_name,
+                        a.email as assigned_email,
+                        r.email as resolver_email,
+                        DATE_FORMAT(t.created_at, '%M %e, %Y') as formatted_date,
+                        DATE_FORMAT(t.created_at, '%l:%i %p') as formatted_time
+                    FROM tickets t
+                    JOIN staff_login u ON t.user_id = u.id
+                    LEFT JOIN departments d ON u.department = d.id
+                    LEFT JOIN staff_login a ON t.assigned_to = a.id
+                    LEFT JOIN staff_login r ON t.resolved_by = r.id
+                    ORDER BY t.created_at DESC";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format names from emails
+            foreach ($tickets as &$ticket) {
+                $parts = explode('@', $ticket['requester_email']);
+                $ticket['requester_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                
+                if (!empty($ticket['assigned_email'])) {
+                    $parts = explode('@', $ticket['assigned_email']);
+                    $ticket['assigned_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                }
+                
+                if (!empty($ticket['resolver_email'])) {
+                    $parts = explode('@', $ticket['resolver_email']);
+                    $ticket['resolver_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                }
+            }
+            
+            return $tickets;
+        } catch (PDOException $e) {
+            error_log("Error in getAllTickets: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Get tickets for specific user (regular users)
+    public function getUserTickets($user_id) {
+        try {
+            $sql = "SELECT t.*, 
+                        u.email as requester_email,
+                        d.department_name,
+                        a.email as assigned_email,
+                        r.email as resolver_email,
+                        DATE_FORMAT(t.created_at, '%M %e, %Y') as formatted_date,
+                        DATE_FORMAT(t.created_at, '%l:%i %p') as formatted_time
+                    FROM tickets t
+                    JOIN staff_login u ON t.user_id = u.id
+                    LEFT JOIN departments d ON u.department = d.id
+                    LEFT JOIN staff_login a ON t.assigned_to = a.id
+                    LEFT JOIN staff_login r ON t.resolved_by = r.id
+                    WHERE t.user_id = ?
+                    ORDER BY t.created_at DESC";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$user_id]);
+            $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format names from emails
+            foreach ($tickets as &$ticket) {
+                $parts = explode('@', $ticket['requester_email']);
+                $ticket['requester_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                
+                if (!empty($ticket['assigned_email'])) {
+                    $parts = explode('@', $ticket['assigned_email']);
+                    $ticket['assigned_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                }
+                
+                if (!empty($ticket['resolver_email'])) {
+                    $parts = explode('@', $ticket['resolver_email']);
+                    $ticket['resolver_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                }
+            }
+            
+            return $tickets;
+        } catch (PDOException $e) {
+            error_log("Error in getUserTickets: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Quick assign ticket AJAX
+    public function quickAssignTicket($ticket_id, $assigned_to) {
+        try {
+            $sql = "UPDATE tickets SET 
+                    assigned_to = :assigned_to, 
+                    updated_at = NOW() 
+                    WHERE id = :ticket_id";
+            
+            $stmt = $this->db->prepare($sql);
+            
+            // Handle null assignment
+            if ($assigned_to === null || $assigned_to === '' || $assigned_to === 'null') {
+                $stmt->bindValue(':assigned_to', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindParam(':assigned_to', $assigned_to, PDO::PARAM_INT);
+            }
+            
+            $stmt->bindParam(':ticket_id', $ticket_id, PDO::PARAM_INT);
+            
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error in quickAssignTicket: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Get status history with formatted dates for AJAX
+    public function getFormattedStatusHistory($ticket_id) {
+        try {
+            $sql = "SELECT l.*, 
+                        CONCAT(u.first_name, ' ', u.last_name) as changed_by_name,
+                        DATE_FORMAT(l.created_at, '%M %e, %Y %l:%i %p') as formatted_date
+                    FROM ticket_status_log l
+                    JOIN staff_login u ON l.changed_by = u.id
+                    WHERE l.ticket_id = :ticket_id
+                    ORDER BY l.created_at DESC";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':ticket_id', $ticket_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Format names from emails if first_name/last_name not available
+            foreach ($results as &$row) {
+                if (empty($row['changed_by_name']) || trim($row['changed_by_name']) === '') {
+                    // Try to get email and format it
+                    $emailSql = "SELECT email FROM staff_login WHERE id = ?";
+                    $emailStmt = $this->db->prepare($emailSql);
+                    $emailStmt->execute([$row['changed_by']]);
+                    $emailData = $emailStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($emailData && !empty($emailData['email'])) {
+                        $parts = explode('@', $emailData['email']);
+                        $row['changed_by_name'] = ucwords(str_replace(['.', '_', '-'], ' ', $parts[0]));
+                    } else {
+                        $row['changed_by_name'] = 'System';
+                    }
+                }
+                
+                // Ensure formatted_date exists
+                if (empty($row['formatted_date'])) {
+                    $row['formatted_date'] = date('F j, Y g:i A', strtotime($row['created_at']));
+                }
+            }
+            
+            return $results;
+        } catch (PDOException $e) {
+            error_log("Error in getFormattedStatusHistory: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Get ticket count by status
+    public function getTicketCountByStatus($status, $user_id = null) {
+        try {
+            $sql = "SELECT COUNT(*) as count FROM tickets WHERE status = :status";
+            $params = [':status' => $status];
+            
+            if ($user_id) {
+                $sql .= " AND user_id = :user_id";
+                $params[':user_id'] = $user_id;
+            }
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result['count'];
+        } catch (PDOException $e) {
+            error_log("Error in getTicketCountByStatus: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+
+        /** ---------------- CONSUMABLES INVENTORY TRACKING MODULE -------------------- **/
+
+    // getting users for issuer and receiver
+    public function getAllStaffNames()
+    {
+        $sql = "SELECT id, email FROM staff_login ORDER BY email";
+        $query = $this->db->prepare($sql);
+        $query->execute();
+        $users = $query->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($users as &$user) {
+            $namePart = explode('@', $user['email'])[0];
+            $user['name'] = ucwords(str_replace('.', ' ', $namePart));
+        }
+
+        return $users; // now each user has ['id'=>..., 'email'=>..., 'name'=>...]
+    }
+
+
+    //consumable items (CRUD)
+    public function getAllConsumableItems() {
+        $sql = "SELECT * FROM consumable_items ORDER BY item_name ASC";
+        $query = $this->db->prepare($sql);
+        $query->execute();
+        return $query->fetchAll(PDO::FETCH_OBJ);
+    }
+
+    public function getConsumableItem($id) {
+        $sql = "SELECT * FROM consumable_items WHERE id = :id LIMIT 1";
+        $query = $this->db->prepare($sql);
+        $query->bindParam(':id', $id, PDO::PARAM_INT);
+        $query->execute();
+        return $query->fetch(PDO::FETCH_OBJ);
+    }
+
+    public function createConsumableItem($data) 
+    {
+        $sql = "INSERT INTO consumable_items (item_name, item_code, unit, reorder_level, expiry_date) 
+                VALUES (:item_name, :item_code, :unit, :reorder_level, :expiry_date)";
+        $query = $this->db->prepare($sql);
+        $query->bindParam(':item_name', $data['item_name'], PDO::PARAM_STR);
+        $query->bindParam(':item_code', $data['item_code'], PDO::PARAM_STR);
+        $query->bindParam(':unit', $data['unit'], PDO::PARAM_STR);
+        $query->bindParam(':reorder_level', $data['reorder_level'], PDO::PARAM_INT);
+        $query->bindParam(':expiry_date', $data['expiry_date'], PDO::PARAM_STR);
+        return $query->execute();
+    }
+
+    public function updateConsumableItem($id, $data)
+    {
+        $sql = "UPDATE consumable_items 
+                SET item_name=:item_name, item_code=:item_code, unit=:unit, 
+                    reorder_level=:reorder_level, expiry_date=:expiry_date
+                WHERE id=:id";
+        $query = $this->db->prepare($sql);
+        $query->bindParam(':item_name', $data['item_name'], PDO::PARAM_STR);
+        $query->bindParam(':item_code', $data['item_code'], PDO::PARAM_STR);
+        $query->bindParam(':unit', $data['unit'], PDO::PARAM_STR);
+        $query->bindParam(':reorder_level', $data['reorder_level'], PDO::PARAM_INT);
+        $query->bindParam(':expiry_date', $data['expiry_date'], PDO::PARAM_STR);
+        $query->bindParam(':id', $id, PDO::PARAM_INT);
+        return $query->execute();
+    }
+
+    //consumable items tracking (CRUD)
+    public function getConsumableTransactions($item_id) {
+        $sql = "SELECT * FROM consumable_transactions WHERE item_id = :item_id ORDER BY transaction_date ASC";
+        $query = $this->db->prepare($sql);
+        $query->bindParam(':item_id', $item_id, PDO::PARAM_INT);
+        $query->execute();
+        return $query->fetchAll(PDO::FETCH_OBJ);
+    }
+
+    public function createConsumableTransaction($data) {
+        $sql = "INSERT INTO consumable_transactions 
+                (item_id, transaction_type, quantity, transaction_date, receiver_name, issuer_name, created_by)
+                VALUES (:item_id, :transaction_type, :quantity, :transaction_date, :receiver_name, :issuer_name, :created_by)";
+        $query = $this->db->prepare($sql);
+        $query->bindParam(':item_id', $data['item_id'], PDO::PARAM_INT);
+        $query->bindParam(':transaction_type', $data['transaction_type'], PDO::PARAM_STR);
+        $query->bindParam(':quantity', $data['quantity'], PDO::PARAM_INT);
+        $query->bindParam(':transaction_date', $data['transaction_date'], PDO::PARAM_STR);
+        $query->bindParam(':receiver_name', $data['receiver_name'], PDO::PARAM_STR);
+        $query->bindParam(':issuer_name', $data['issuer_name'], PDO::PARAM_STR);
+        $query->bindParam(':created_by', $data['created_by'], PDO::PARAM_INT);
+        return $query->execute();
+    }
+
+    public function getConsumableBalance($item_id) {
+        // Total receipts
+        $sqlIn = "SELECT SUM(quantity) as total FROM consumable_transactions WHERE item_id = :item_id AND transaction_type = 'receipt'";
+        $queryIn = $this->db->prepare($sqlIn);
+        $queryIn->bindParam(':item_id', $item_id, PDO::PARAM_INT);
+        $queryIn->execute();
+        $total_in = $queryIn->fetch(PDO::FETCH_OBJ)->total ?? 0;
+
+        // Total issues
+        $sqlOut = "SELECT SUM(quantity) as total FROM consumable_transactions WHERE item_id = :item_id AND transaction_type = 'issue'";
+        $queryOut = $this->db->prepare($sqlOut);
+        $queryOut->bindParam(':item_id', $item_id, PDO::PARAM_INT);
+        $queryOut->execute();
+        $total_out = $queryOut->fetch(PDO::FETCH_OBJ)->total ?? 0;
+
+        return $total_in - $total_out;
+    }
+    //etting the quatery report
+    public function getQuarterlySummary($year = null)
+    {
+        if (!$year) {
+            $year = date('Y'); // default to current year
+        }
+
+        $sql = "
+            SELECT 
+                ci.id AS item_id,
+                ci.item_name,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 1 AND ct.transaction_type='receipt' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q1_received,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 1 AND ct.transaction_type='issue' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q1_issued,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 2 AND ct.transaction_type='receipt' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q2_received,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 2 AND ct.transaction_type='issue' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q2_issued,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 3 AND ct.transaction_type='receipt' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q3_received,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 3 AND ct.transaction_type='issue' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q3_issued,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 4 AND ct.transaction_type='receipt' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q4_received,
+                SUM(CASE WHEN QUARTER(ct.transaction_date) = 4 AND ct.transaction_type='issue' AND YEAR(ct.transaction_date) = :year THEN ct.quantity ELSE 0 END) AS Q4_issued
+            FROM consumable_items ci
+            LEFT JOIN consumable_transactions ct ON ci.id = ct.item_id
+            GROUP BY ci.id, ci.item_name
+            ORDER BY ci.item_name ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':year', $year, PDO::PARAM_INT);
+        $stmt->execute();
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Add current balance for each item
+        foreach ($items as &$item) {
+            $item['current_balance'] = $this->getConsumableBalance($item['item_id']);
+        }
+
+        return $items;
+    }
+
+    //fetching expiring items within 3 months
+    public function getExpiringItems()
+    {
+        $sql = "SELECT *
+                FROM consumable_items
+                WHERE expiry_date IS NOT NULL
+                AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
+                AND expiry_date >= CURDATE()";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+
+        /** ---------------- GEAR INVENTORY TRACKING MODULE -------------------- **/
+
+        // Add new gear to inventory
+    public function addInventoryItem($item_name, $number_procured, $comments = '') {
+        $in_store = $number_procured;
+        $stmt = $this->db->prepare("
+            INSERT INTO gear_inventory (item_name, number_procured, number_issued, in_store, comments)
+            VALUES (?, ?, 0, ?, ?)
+        ");
+        return $stmt->execute([$item_name, $number_procured, $in_store, $comments]);
+    }
+
+        // Get allgear inventory items
+    public function getAllInventory() {
+        $stmt = $this->db->query("SELECT * FROM gear_inventory ORDER BY item_name ASC");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+        // Get a single gear item by ID
+    public function getInventoryById($id) {
+        $stmt = $this->db->prepare("SELECT * FROM gear_inventory WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    
+    // Update gear inventory item counts or comments
+    public function updateInventoryItem($id, $number_procured, $number_issued, $comments = '') {
+        $in_store = $number_procured - $number_issued;
+        $stmt = $this->db->prepare("
+            UPDATE gear_inventory
+            SET number_procured = ?, number_issued = ?, in_store = ?, comments = ?, updated_at = NOW()
+            WHERE id = ?
+        ");
+        return $stmt->execute([$number_procured, $number_issued, $in_store, $comments, $id]);
+    }
+
+        // Delete inventory item
+    public function deleteInventoryItem($id) {
+        $stmt = $this->db->prepare("DELETE FROM gear_inventory WHERE id = ?");
+        return $stmt->execute([$id]);
+    }
+
+        // Issue gear to staff
+    public function issueGear($staff_id, $item_id, $quantity, $date_issued, $item_condition = 'Good')
+    {
+        $sql = "INSERT INTO gear_items_tracking (staff_id, item_id, date_issued, quantity, item_condition)
+                VALUES (:staff_id, :item_id, :date_issued, :quantity, :item_condition)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            ':staff_id' => $staff_id,
+            ':item_id' => $item_id,
+            ':date_issued' => $date_issued,
+            ':quantity' => $quantity,
+            ':item_condition' => $item_condition
+        ]);
+
+        // Update gear inventory counts
+        $update = "UPDATE gear_inventory SET
+                    number_issued = number_issued + :qty,
+                    in_store = number_procured - (number_issued + :qty)
+                WHERE id = :item_id";
+        $stmt2 = $this->db->prepare($update);
+        $stmt2->execute([':qty' => $quantity, ':item_id' => $item_id]);
+    }
+
+        // Get all gear issued
+    public function getAllIssuedGear()
+    {
+        $sql = "
+            SELECT 
+                t.*, 
+                i.item_name,
+                s.email
+            FROM gear_items_tracking t
+            JOIN gear_inventory i ON t.item_id = i.id
+            JOIN staff_login s ON t.staff_id = s.id
+            ORDER BY t.date_issued DESC
+        ";
+
+        $stmt = $this->db->query($sql);
+        $issuedGear = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($issuedGear as &$gear) {
+            $namePart = explode('@', $gear['email'])[0];
+            $gear['staff_name'] = ucwords(str_replace('.', ' ', $namePart));
+        }
+
+        return $issuedGear;
+    }
+
+        // Get issued gear per staff
+    public function getIssuedByStaff($staff_id) {
+        $stmt = $this->db->prepare("
+            SELECT t.id, i.item_name, t.quantity, t.date_issued, t.item_condition, t.signed_by
+            FROM gear_items_tracking t
+            JOIN gear_inventory i ON t.item_id = i.id
+            WHERE t.staff_id = ?
+            ORDER BY t.date_issued DESC
+        ");
+        $stmt->execute([$staff_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+        // Update issued gear record
+    public function updateIssuedGear($id, $quantity, $item_condition = 'Good', $signed_by = '') {
+        // Fetch current record to adjust inventory counts
+        $stmt = $this->db->prepare("SELECT item_id, quantity FROM gear_items_tracking WHERE id = ?");
+        $stmt->execute([$id]);
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$record) return false;
+
+        $item_id = $record['item_id'];
+        $old_quantity = $record['quantity'];
+        $diff = $quantity - $old_quantity;
+
+        $stmt2 = $this->db->prepare("
+            UPDATE gear_items_tracking
+            SET quantity = ?, item_condition = ?, signed_by = ?, updated_at = NOW()
+            WHERE id = ?
+        ");
+        $success = $stmt2->execute([$quantity, $item_condition, $signed_by, $id]);
+
+        if ($success && $diff != 0) {
+            // Adjust inventory counts
+            $stmt3 = $this->db->prepare("
+                UPDATE gear_inventory
+                SET number_issued = number_issued + ?, in_store = number_procured - (number_issued + ?), updated_at = NOW()
+                WHERE id = ?
+            ");
+            if ($diff > 0) {
+                $stmt3->execute([$diff, $diff, $item_id]);
+            } else {
+                $stmt3->execute([$diff, abs($diff), $item_id]);
+            }
+        }
+
+        return $success;
+    }
+
+        // Delete issued gear (returning to inventory)
+    public function deleteIssuedGear($id) {
+        $stmt = $this->db->prepare("SELECT item_id, quantity FROM gear_items_tracking WHERE id = ?");
+        $stmt->execute([$id]);
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$record) return false;
+
+        $item_id = $record['item_id'];
+        $quantity = $record['quantity'];
+
+        $stmt2 = $this->db->prepare("DELETE FROM gear_items_tracking WHERE id = ?");
+        $success = $stmt2->execute([$id]);
+
+        if ($success) {
+            // Adjust inventory
+            $stmt3 = $this->db->prepare("
+                UPDATE gear_inventory
+                SET number_issued = number_issued - ?, in_store = number_procured - (number_issued - ?), updated_at = NOW()
+                WHERE id = ?
+            ");
+            $stmt3->execute([$quantity, $quantity, $item_id]);
+        }
+
+        return $success;
+    }
+
+    public function getStaffWithIssuedGear()
+    {
+        $sql = "
+            SELECT 
+                s.id,
+                s.email,
+                CONCAT(loc.location_name, ' - ', o.office_name) AS duty_station,
+                COUNT(t.id) AS total_items
+            FROM gear_items_tracking t
+            JOIN staff_login s ON t.staff_id = s.id
+            LEFT JOIN offices o ON s.dutystation = o.id
+            LEFT JOIN locations loc ON o.location_id = loc.id
+            GROUP BY s.id
+            ORDER BY s.email ASC
+        ";
+
+        $stmt = $this->db->query($sql);
+        $staffList = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Convert email to display name
+        foreach ($staffList as &$staff) {
+            $namePart = explode('@', $staff['email'])[0];
+            $staff['staff_name'] = ucwords(str_replace('.', ' ', $namePart));
+        }
+
+        return $staffList;
+    }
+
+    /** ---------------- NON-CONSUMABLES INVENTORY TRACKING MODULE -------------------- **/
+    // SERIALISED NONCONSUMABLES FUNCTIONS
+    public function addSerialised($data)
+    {
+        $sql = "INSERT INTO nonconsumables_serialized
+                (item_name, description, serial_number, specification, accessories,
+                quantity_received, quantity_in_store, date_received,
+                current_status, condition_status, recipient_name, remarks)
+                VALUES
+                (:item_name, :description, :serial_number, :specification, :accessories,
+                :quantity_received, :quantity_in_store, :date_received,
+                :current_status, :condition_status, :recipient_name, :remarks)";
+
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute($data);
+    }
+
+
+    public function getAllSerialised()
+    {
+        try {
+            $sql = "SELECT ns.* 
+                    FROM nonconsumables_serialized ns
+                    ORDER BY ns.item_name ASC";
+
+            $stmt = $this->db->query($sql);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            echo "Error fetching serialized non-consumables: " . $e->getMessage();
+            return [];
+        }
+    }
+
+    public function getSerialisedById($id)
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM nonconsumables_serialized WHERE id = :id"
+        );
+
+        $stmt->execute([':id' => $id]);
+
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateSerialised($data) 
+    {
+        $sql = "UPDATE nonconsumables_serialized SET
+                    item_name = :item_name,
+                    description = :description,
+                    serial_number = :serial_number,
+                    specification = :specification,
+                    accessories = :accessories,
+                    quantity_received = :quantity_received,
+                    quantity_in_store = :quantity_in_store,
+                    date_received = :date_received,
+                    current_status = :current_status,
+                    condition_status = :condition_status,
+                    recipient_name = :recipient_name,
+                    remarks = :remarks
+                WHERE id = :id";
+
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute($data);
+    }
+
+
+    public function deleteSerialised($id)
+    {
+        $stmt = $this->db->prepare(
+            "DELETE FROM nonconsumables_serialized WHERE id = :id"
+        );
+
+        return $stmt->execute([':id' => $id]);
+    }
+
+    public function addSerialisedMovement($data)
+    {
+        $sql = "INSERT INTO nonconsumables_serialized_movements
+                (serialized_id, movement_type, movement_date,
+                destination, remarks, recorded_by)
+                VALUES
+                (:serialized_id, :movement_type, :movement_date,
+                :destination, :remarks, :recorded_by)";
+
+        $stmt = $this->db->prepare($sql);
+
+        return $stmt->execute($data);
+    }
+
+    public function getSerialisedMovements($serialized_id)
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM nonconsumables_serialized_movements
+            WHERE serialized_id = :id
+            ORDER BY movement_date DESC"
+        );
+
+        $stmt->execute([':id' => $serialized_id]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+
+    public function addSerialisedConditionLog($data)
+    {
+        $sql = "INSERT INTO nonconsumables_serialized_condition_log
+                (serialized_id, condition_status, remarks, checked_by, date_checked)
+                VALUES
+                (:serialized_id, :condition_status, :remarks, :checked_by, :date_checked)";
+
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute([
+            ':serialized_id'   => $data['serialized_id'],
+            ':condition_status'=> $data['condition_status'],
+            ':remarks'         => $data['remarks'] ?? null,
+            ':checked_by'      => $data['checked_by'] ?? null,
+            ':date_checked'    => $data['date_checked']
+        ]);
+    }
+
+    // Optional: Fetch logs for a serialized item
+    public function getConditionLogs($serialized_id)
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM nonconsumables_serialized_condition_log
+            WHERE serialized_id = :id
+            ORDER BY date_checked DESC"
+        );
+        $stmt->execute([':id' => $serialized_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+
+    // BULK NONCONSUMABLES FUNCTIONS
+    // Add Bulk Item
+    public function addBulk($data)
+    {
+        $sql = "INSERT INTO nonconsumables_bulk
+                (item_name, specification, description, condition_status, last_checked_date, remarks)
+                VALUES
+                (:item_name, :specification, :description, :condition_status, :last_checked_date, :remarks)";
+
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute($data);
+    }
+
+    // Get all bulk items
+    public function getAllBulk()
+    {
+        $sql = "SELECT *
+                FROM nonconsumables_bulk
+                ORDER BY created_at DESC";
+
+        return $this->db->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+
+
+    public function getBulkById($id)
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM nonconsumables_bulk WHERE id = :id"
+        );
+
+        $stmt->execute([':id' => $id]);
+
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateBulk($id, $data)
+    {
+        $sql = "UPDATE nonconsumables_bulk SET
+                    item_name = :item_name,
+                    specification = :specification,
+                    description = :description,
+                    condition_status = :condition_status,
+                    last_checked_date = :last_checked_date,
+                    remarks = :remarks
+                WHERE id = :id";
+
+        $stmt = $this->db->prepare($sql);
+
+        // Add the ID to the data array for the WHERE clause
+        $data['id'] = $id;
+
+        return $stmt->execute($data);
+    }
+
+
+    public function deleteBulk($id)
+    {
+        $stmt = $this->db->prepare(
+            "DELETE FROM nonconsumables_bulk WHERE id = :id"
+        );
+
+        return $stmt->execute([':id' => $id]);
+    }
+
+    // Add a new bulk movement and update totals
+    public function addBulkMovement($data)
+    {
+        // 1️⃣ Insert into movements table
+        $sql = "INSERT INTO nonconsumables_bulk_movements
+                (bulk_id, movement_type, quantity, movement_date, destination, remarks, recorded_by)
+                VALUES
+                (:bulk_id, :movement_type, :quantity, :movement_date, :destination, :remarks, :recorded_by)";
+        $stmt = $this->db->prepare($sql);
+        $inserted = $stmt->execute($data);
+
+        if (!$inserted) return false;
+
+        // 2️⃣ Update the totals in the bulk table
+        $columnMap = [
+            'received'   => 'total_received',
+            'dispatched' => 'total_dispatched',
+            'returned'   => 'total_returned',
+            'disposed'   => 'total_disposed'
+        ];
+
+        if (isset($columnMap[$data['movement_type']])) {
+            $column = $columnMap[$data['movement_type']];
+            $sqlUpdate = "UPDATE nonconsumables_bulk
+                        SET $column = $column + :quantity
+                        WHERE id = :bulk_id";
+            $stmtUpdate = $this->db->prepare($sqlUpdate);
+            $stmtUpdate->execute([
+                'quantity' => $data['quantity'],
+                'bulk_id'  => $data['bulk_id']
+            ]);
+        }
+
+        return true;
+    }
+    // Get all movements for a specific bulk item
+    public function getBulkMovements($bulk_id)
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM nonconsumables_bulk_movements
+            WHERE bulk_id = :id
+            ORDER BY movement_date DESC"
+        );
+
+        $stmt->execute([':id' => $bulk_id]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+
+
+
 
 
 }
