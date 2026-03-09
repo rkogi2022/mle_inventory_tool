@@ -239,7 +239,9 @@ class consumables extends Controller
 
             // MAIN RECIPIENT
             // $mail->addAddress('information.systems@evidenceaction.org');
-            $mail->addAddress('rita.kogi@evidenceaction.org');
+            $mail->addAddress('gentrix.obinda@evidenceaction.org');
+            //Farida
+            $mail->addBCC('rita.kogi@evidenceaction.org');
 
             // OPTIONAL TEAM BCC
             $mail->addBCC('information.systems@evidenceaction.org');

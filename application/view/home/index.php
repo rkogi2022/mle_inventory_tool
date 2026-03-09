@@ -38,12 +38,12 @@ $role = $_SESSION['role'] ?? null;
       </div>
       <?php endif; ?>
 
-      <!-- <?php if ($role === 'admin' || $role === 'super_admin'): ?>
+      <?php if ($role === 'admin' || $role === 'super_admin'): ?>
       <div class="card" style="background-color:#e600a0;" 
            onClick="to_url('<?php echo URL . 'consumables'; ?>')">
         <b style="color: #fff; margin-left:3rem; font-family: ArchivoBlack; font-size:20px;">LAB INVENTORY TOOL</b>
       </div>
-      <?php endif; ?> -->
+      <?php endif; ?>
 
   </div>
 </div>
