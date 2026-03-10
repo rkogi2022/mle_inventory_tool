@@ -60,19 +60,19 @@ define('URL', URL_PROTOCOL . URL_DOMAIN . URL_SUB_FOLDER);
 // define('DB_PASS', ''); 
 // define('DB_CHARSET', 'utf8');
 
-// define('DB_TYPE', 'mysql');
-// define('DB_HOST', '127.0.0.1');
-// define('DB_NAME', 'mle_inventory');
-// define('DB_USER', 'root');
-// define('DB_PASS', 'is.team.2024');
-// define('DB_CHARSET', 'utf8');
-
 define('DB_TYPE', 'mysql');
-define('DB_HOST', 'mysql-db.cnltbg2tkrfl.eu-central-1.rds.amazonaws.com');
+define('DB_HOST', '127.0.0.1');
 define('DB_NAME', 'mle_inventory');
-define('DB_USER', 'php.apps');
-define('DB_PASS', 'P|-|p.@|>1>5');
+define('DB_USER', 'root');
+define('DB_PASS', 'is.team.2024');
 define('DB_CHARSET', 'utf8');
+
+// define('DB_TYPE', 'mysql');
+// define('DB_HOST', 'mysql-db.cnltbg2tkrfl.eu-central-1.rds.amazonaws.com');
+// define('DB_NAME', 'mle_inventory');
+// define('DB_USER', 'php.apps');
+// define('DB_PASS', 'P|-|p.@|>1>5');
+// define('DB_CHARSET', 'utf8');
 
 
 /**
