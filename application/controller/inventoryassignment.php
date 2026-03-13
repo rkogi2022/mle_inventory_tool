@@ -233,124 +233,153 @@ protected function sendReminderToUnacknowledgedUsers($usersWithPendingAssignment
     $totalUsers = count($usersWithPendingAssignments);
     $batches = array_chunk($usersWithPendingAssignments, $batchSize);
 
+    $logs = []; // store console logs
+
     foreach ($batches as $index => $batch) {
+
         foreach ($batch as $user) {
+
             $recipientEmail = $user['email'];
             $recipientName = ucwords(str_replace('.', ' ', explode('@', $recipientEmail)[0]));
 
-            // Get reminder count for this user
+            // get reminder count
             $reminderCount = $this->getReminderCountForUser($recipientEmail);
-            
+
+            // get days pending
+            $daysPending = $this->getDaysPendingForUser($recipientEmail);
+
             $mail = new PHPMailer(true);
 
             try {
+
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
                 $mail->Username   = 'information.systems@evidenceaction.org';
-                $mail->Password   = 'rtnbqnbajjhcifbr'; // Consider using env var
+                $mail->Password   = 'rtnbqnbajjhcifbr';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
                 $mail->SMTPKeepAlive = true;
 
+                // enable debug
+                $mail->SMTPDebug = 0;
+
                 $mail->setFrom('information.systems@evidenceaction.org', 'MLE Inventory Tool');
 
-                // For testing:
-                // $mail->addAddress('rita.kogi@evidenceaction.org');
-                // For production:
                 $mail->addAddress($recipientEmail, $recipientName);
                 $mail->addBCC('information.systems@evidenceaction.org');
 
                 $mail->isHTML(true);
                 $mail->CharSet = 'UTF-8';
-                
-                // Customize subject based on reminder count
+
                 if ($reminderCount == 0) {
                     $mail->Subject = 'Reminder: Please Acknowledge Your Assigned Item(s) in MLE Inventory Tool';
                 } else {
                     $mail->Subject = 'Follow-up Reminder #' . ($reminderCount + 1) . ': Pending Item Acknowledgment Required';
                 }
 
-                // Get days pending
-                $daysPending = $this->getDaysPendingForUser($recipientEmail);
-                
                 $mail->Body = "
                     <p>Dear {$recipientName},</p>
 
-                    <p>Our records show that you have been assigned one or more inventory items that are now <strong>{$daysPending} days overdue</strong> for acknowledgment in the <strong>MLE Inventory Tool</strong>.</p>
-                    
+                    <p>Our records show that you have been assigned one or more inventory items that are now 
+                    <strong>{$daysPending} days overdue</strong> for acknowledgment in the 
+                    <strong>MLE Inventory Tool</strong>.</p>
+
                     <p><strong>Reminder #" . ($reminderCount + 1) . "</strong></p>
 
-                    <p><strong>Action Required:</strong> Kindly log in to the system and acknowledge the item(s) assigned to you as soon as possible. Items must be acknowledged within 30 days of assignment.</p>
+                    <p><strong>Action Required:</strong> Kindly log in to the system and acknowledge the item(s) assigned to you as soon as possible.</p>
 
-                    <p><a href='https://mleinventory.evidenceaction.org/login/index' style='background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>Click here to log in</a></p>
+                    <p>
+                    <a href='https://mleinventory.evidenceaction.org/login/index'
+                    style='background:#4CAF50;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;'>
+                    Login to Inventory Tool
+                    </a>
+                    </p>
 
-                    <p>If there's a mismatch between the listed items and what you actually received, or if you're unable to access your account, please contact:</p>
+                    <p>If there's a mismatch between the listed items and what you received, please contact:</p>
+
                     <ul>
-                        <li><a href='mailto:johnmark.oyugi@evidenceaction.org'>johnmark.oyugi@evidenceaction.org</a></li>
-                        <li><a href='mailto:terence.wandera@evidenceaction.org'>terence.wandera@evidenceaction.org</a></li>
+                        <li>johnmark.oyugi@evidenceaction.org</li>
+                        <li>terence.wandera@evidenceaction.org</li>
                     </ul>
 
-                    <p>If you're experiencing navigation or technical difficulties, feel free to reach out to anyone in the IS department.</p>
-
-                    <p><em>Note: This is an automated reminder. You will continue to receive reminders every 30 days until the items are acknowledged.</em></p>
-
-                    <p>Thank you for your cooperation.</p>
+                    <p><em>This is an automated reminder sent every 30 days until acknowledgment.</em></p>
 
                     <p>Best regards,<br>
-                    MLE-D DEPARTMENT<br>
+                    MLE-D Department<br>
                     Evidence Action</p>
                 ";
 
-                $mail->AltBody = "Dear {$recipientName},\n\nYou have unacknowledged inventory items that are {$daysPending} days overdue. Reminder #" . ($reminderCount + 1) . ". Please log in to https://mleinventory.evidenceaction.org/login/index to acknowledge. For support, contact johnmark.oyugi@evidenceaction.org or terence.wandera@evidenceaction.org.\n\nYou will receive reminders every 30 days until acknowledgment.\n\nRegards,\nRita Kogi";
+                $mail->AltBody =
+                "Dear {$recipientName},
+
+                    You have inventory items that are {$daysPending} days overdue for acknowledgment.
+
+                    Reminder #" . ($reminderCount + 1) . "
+
+                    Login:
+                    https://mleinventory.evidenceaction.org/login/index
+
+                    Support:
+                    johnmark.oyugi@evidenceaction.org
+                    terence.wandera@evidenceaction.org
+
+                    MLE Inventory Tool";
 
                 $mail->send();
-                
-                // Update reminder tracking in database
+
+                // update tracking
                 $this->model->updateReminderTracking($recipientEmail);
 
-                error_log("Reminder #" . ($reminderCount + 1) . " email sent to: {$recipientEmail} (Days pending: {$daysPending})");
+                $logs[] = "✅ Email sent to {$recipientEmail} (Days Pending: {$daysPending})";
+
             } catch (Exception $e) {
-                error_log("PHPMailer Error (Reminder): {$mail->ErrorInfo} for email: {$recipientEmail}");
+
+                $logs[] = "❌ Failed sending to {$recipientEmail} : {$mail->ErrorInfo}";
+
             }
+
         }
 
-        // Pause briefly between batches to reduce SMTP load or avoid timeouts
-        sleep(1); // pause 1 second after each batch
+        sleep(1); // pause between batches
     }
 
-    error_log("✅ Finished sending reminder emails to {$totalUsers} users in " . count($batches) . " batches.");
+    $logs[] = "🎯 Finished sending reminders to {$totalUsers} users.";
+
+    return $logs;
 }
 
 // Helper method
 protected function getReminderCountForUser($email)
 {
-    $sql = "SELECT MAX(reminder_count) as count 
-            FROM inventory_assignment 
-            WHERE email = :email 
+    $sql = "SELECT MAX(reminder_count) as count
+            FROM inventory_assignment
+            WHERE email = :email
             AND acknowledgment_status = 'pending'";
-    
+
     $query = $this->db->prepare($sql);
     $query->bindValue(':email', $email, PDO::PARAM_STR);
     $query->execute();
+
     $result = $query->fetch(PDO::FETCH_ASSOC);
-    
+
     return $result ? (int)$result['count'] : 0;
 }
 
 protected function getDaysPendingForUser($email)
 {
-    $sql = "SELECT DATEDIFF(CURDATE(), MIN(date_assigned)) as days_pending 
-            FROM inventory_assignment 
-            WHERE email = :email 
+    $sql = "SELECT DATEDIFF(CURDATE(), MIN(date_assigned)) as days_pending
+            FROM inventory_assignment
+            WHERE email = :email
             AND acknowledgment_status = 'pending'";
-    
+
     $query = $this->db->prepare($sql);
     $query->bindValue(':email', $email, PDO::PARAM_STR);
     $query->execute();
+
     $result = $query->fetch(PDO::FETCH_ASSOC);
-    
-    return $result ? $result['days_pending'] : 30;
+
+    return $result ? $result['days_pending'] : 0;
 }
 
 public function triggerAcknowledgmentReminders()
@@ -358,26 +387,33 @@ public function triggerAcknowledgmentReminders()
     session_start();
 
     if ($this->model === null) {
+
         $_SESSION['reminder_success'] = "Model not loaded.";
-        header("Location: " . URL . "inventoryassignment/manage");
+        header("Location: " . URL . "users/getUsers");
         exit();
     }
 
-    // Use the NEW method that gets ALL users
     $users = $this->model->getAllUsersWithPendingAcknowledgment();
 
     if (!empty($users)) {
-        // This function already handles batching internally
-        $this->sendReminderToUnacknowledgedUsers($users);
-        
-        $_SESSION['reminder_success'] = "✅ All reminder emails sent to " . count($users) . " users.";
-        header("Location: " . URL . "inventoryassignment/index");
-        exit();
+
+        $logs = $this->sendReminderToUnacknowledgedUsers($users);
+
+        $_SESSION['reminder_success'] = "Reminder emails processed for " . count($users) . " users.";
+
     } else {
-        $_SESSION['reminder_success'] = "No users with pending acknowledgments found.";
-        header("Location: " . URL . "inventoryassignment/index");
-        exit();
+
+        $logs = ["No users with pending acknowledgments found."];
     }
+
+    // print console logs
+    echo "<script>";
+    foreach ($logs as $log) {
+        echo "console.log(" . json_encode($log) . ");";
+    }
+    echo "</script>";
+
+    header("refresh:2;url=" . URL . "users/getUsers");
 }
 
 

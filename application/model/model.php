@@ -1345,33 +1345,28 @@ public function addAssignment($user_id, $item_ids, $date_assigned, $manager_emai
 
     public function getAllUsersWithPendingAcknowledgment()
     {
-        $sql = "SELECT DISTINCT email 
-                FROM inventory_assignment 
-                WHERE acknowledgment_status = 'pending' 
-                AND date_assigned <= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                AND (
-                    last_reminder_sent_at IS NULL 
-                    OR last_reminder_sent_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                )";
-        // No LIMIT clause - gets ALL users at once
-        
+        $sql = "SELECT DISTINCT email
+                FROM inventory_assignment
+                WHERE acknowledgment_status = 'pending'
+                AND email IS NOT NULL";
+
         $query = $this->db->prepare($sql);
         $query->execute();
 
-        return $query->fetchAll(PDO::FETCH_ASSOC);
+        return $query->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
-
     // Add method to update reminder tracking
     public function updateReminderTracking($email)
     {
-        $sql = "UPDATE inventory_assignment 
-                SET last_reminder_sent_at = NOW(), 
-                    reminder_count = reminder_count + 1 
-                WHERE email = :email 
+        $sql = "UPDATE inventory_assignment
+                SET last_reminder_sent_at = NOW(),
+                    reminder_count = COALESCE(reminder_count,0) + 1
+                WHERE email = :email
                 AND acknowledgment_status = 'pending'";
-        
+
         $query = $this->db->prepare($sql);
         $query->bindValue(':email', $email, PDO::PARAM_STR);
+
         return $query->execute();
     }
 
